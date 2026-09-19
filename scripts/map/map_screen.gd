@@ -10,7 +10,10 @@ var zone_positions: Dictionary = {}
 
 var is_dragging := false
 var last_pointer_position := Vector2.ZERO
+var map_bounds := Rect2()
 
+const MAP_SCALE := 20.0
+const MAP_PADDING := 250.0
 
 func _ready() -> void:
 	ApiClient.floor_received.connect(_on_floor_received)
@@ -32,7 +35,14 @@ func build_map(floor_data: Dictionary) -> void:
 
 	zone_positions.clear()
 
-	map_container.size = Vector2(2200, 1800)
+	map_bounds = calculate_map_bounds(zones)
+	map_container.size = map_bounds.size + Vector2(
+		MAP_PADDING * 2.0,
+		MAP_PADDING * 2.0
+	)
+
+	print("Bornes de la map : ", map_bounds)
+	print("Taille de la map : ", map_container.size)
 
 	if zones.is_empty():
 		print("Aucune zone à afficher")
@@ -45,19 +55,24 @@ func build_map(floor_data: Dictionary) -> void:
 	
 	var start_zone_id: String = floor_data.get("start_zone_id", "")
 	center_on_zone(start_zone_id)
-		
+
+
 func create_zone(zone: Dictionary) -> void:
 	var position_data: Dictionary = zone.get("position", {})
 
 	var raw_x := float(position_data.get("x", 0))
 	var raw_y := float(position_data.get("y", 0))
 
-	var map_scale := 20.0
+	var world_position := Vector2(
+		raw_x * MAP_SCALE,
+		raw_y * MAP_SCALE
+	)
 
-	var x := raw_x * map_scale
-	var y := raw_y * map_scale
-
-	var map_position := Vector2(x, y)
+	var map_position := (
+		world_position
+		- map_bounds.position
+		+ Vector2(MAP_PADDING, MAP_PADDING)
+	)
 
 	var zone_id: String = zone.get("id", "")
 
@@ -117,8 +132,9 @@ func _input(event: InputEvent) -> void:
 		var delta: Vector2 = event.position - last_pointer_position
 
 		map_container.position += delta
-		last_pointer_position = event.position
+		clamp_map_position()
 
+		last_pointer_position = event.position
 
 	# --- Écran tactile ---
 	elif event is InputEventScreenTouch:
@@ -127,6 +143,7 @@ func _input(event: InputEvent) -> void:
 
 	elif event is InputEventScreenDrag:
 		map_container.position += event.relative
+		clamp_map_position()
 		
 func center_on_zone(zone_id: String) -> void:
 	if not zone_positions.has(zone_id):
@@ -137,7 +154,52 @@ func center_on_zone(zone_id: String) -> void:
 	var screen_center: Vector2 = map_viewport.size / 2.0
 
 	map_container.position = screen_center - zone_position
+	clamp_map_position()
 
 	print("Carte centrée sur : ", zone_id)
 	print("Position zone : ", zone_position)
 	print("Position map : ", map_container.position)
+
+func calculate_map_bounds(zones: Array) -> Rect2:
+	var min_x := INF
+	var min_y := INF
+	var max_x := -INF
+	var max_y := -INF
+
+	for zone in zones:
+		var position_data: Dictionary = zone.get("position", {})
+
+		var x := float(position_data.get("x", 0)) * MAP_SCALE
+		var y := float(position_data.get("y", 0)) * MAP_SCALE
+
+		min_x = min(min_x, x)
+		min_y = min(min_y, y)
+		max_x = max(max_x, x)
+		max_y = max(max_y, y)
+
+	return Rect2(
+		Vector2(min_x, min_y),
+		Vector2(max_x - min_x, max_y - min_y)
+	)
+
+func clamp_map_position() -> void:
+	var viewport_size: Vector2 = map_viewport.size
+	var map_size: Vector2 = map_container.size
+
+	var min_x := viewport_size.x - map_size.x
+	var min_y := viewport_size.y - map_size.y
+
+	var max_x := 0.0
+	var max_y := 0.0
+
+	map_container.position.x = clamp(
+		map_container.position.x,
+		min_x,
+		max_x
+	)
+
+	map_container.position.y = clamp(
+		map_container.position.y,
+		min_y,
+		max_y
+	)
