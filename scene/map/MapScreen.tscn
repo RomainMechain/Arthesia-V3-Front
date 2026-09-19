@@ -25,6 +25,24 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.15487596, 0.154876, 0.15487596, 1)
 
+[node name="MapViewport" type="Control" parent="."]
+clip_contents = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 82.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MapContainer" type="Control" parent="MapViewport"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
 [node name="FloorTitle" type="Label" parent="."]
 layout_mode = 0
 offset_left = 41.0
@@ -33,12 +51,3 @@ offset_right = 320.0
 offset_bottom = 60.0
 text = "Les Archipels Suspendus"
 label_settings = SubResource("LabelSettings_ayafv")
-
-[node name="MapContainer" type="Control" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_top = 251.0
-grow_horizontal = 2
-grow_vertical = 2
