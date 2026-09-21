@@ -7,13 +7,11 @@ var current_request := ""
 
 
 signal floor_received(data)
+signal player_received(data)
 
 
 func _ready() -> void:
-	http = HTTPRequest.new()
-	add_child(http)
-
-	http.request_completed.connect(_on_request_completed)
+	pass
 
 
 func health_check() -> void:
@@ -30,48 +28,121 @@ func health_check() -> void:
 
 
 func get_floor(floor_id: String) -> void:
-	current_request = "floor"
+	var http := HTTPRequest.new()
+	add_child(http)
+
+	http.request_completed.connect(
+		func(result, response_code, headers, body):
+			_on_floor_request_completed(
+				http,
+				result,
+				response_code,
+				headers,
+				body
+			)
+	)
 
 	var url := BASE_URL + "/content/floors/" + floor_id
-
 	print("GET ", url)
 
 	var error := http.request(url)
 
 	if error != OK:
-		print("Erreur lors de la requête : ", error)
+		print("Erreur lors de la requête Floor : ", error)
+		http.queue_free()
+		
+func get_player(player_id: String) -> void:
+	var http := HTTPRequest.new()
+	add_child(http)
 
+	http.request_completed.connect(
+		func(result, response_code, headers, body):
+			_on_player_request_completed(
+				http,
+				result,
+				response_code,
+				headers,
+				body
+			)
+	)
 
-func _on_request_completed(
+	var url := BASE_URL + "/players/" + player_id
+	print("GET ", url)
+
+	var error := http.request(url)
+
+	if error != OK:
+		print("Erreur lors de la requête Player : ", error)
+		http.queue_free()
+		
+func _on_floor_request_completed(
+	http: HTTPRequest,
 	result: int,
 	response_code: int,
 	headers: PackedStringArray,
 	body: PackedByteArray
 ) -> void:
-	print("HTTP result : ", result)
-	print("HTTP status : ", response_code)
+	http.queue_free()
+
+	print("Floor HTTP status : ", response_code)
+
+	if response_code != 200:
+		print("Erreur HTTP Floor : ", response_code)
+		return
 
 	var response_text := body.get_string_from_utf8()
 
-	print("Response : ", response_text)
+	var json := JSON.new()
+	var parse_result := json.parse(response_text)
 
-	if current_request == "health":
-		print("Health response reçue")
+	if parse_result != OK:
+		print("Erreur JSON Floor : ", json.get_error_message())
+		return
 
-	elif current_request == "floor":
-		var json := JSON.new()
-		var parse_result := json.parse(response_text)
+	var data = json.data
 
-		if parse_result != OK:
-			print("Erreur JSON : ", json.get_error_message())
-			return
+	if typeof(data) != TYPE_DICTIONARY:
+		print("Erreur : la réponse Floor n'est pas un objet JSON")
+		return
 
-		var data = json.data
+	print("Floor reçu : ", data.get("name", "Sans nom"))
 
-		if typeof(data) != TYPE_DICTIONARY:
-			print("Erreur : la réponse du Floor n'est pas un objet JSON")
-			return
+	floor_received.emit(data)
+	
+func _on_player_request_completed(
+	http: HTTPRequest,
+	result: int,
+	response_code: int,
+	headers: PackedStringArray,
+	body: PackedByteArray
+) -> void:
+	http.queue_free()
 
-		print("Floor reçu : ", data.get("name", "Sans nom"))
+	print("Player HTTP status : ", response_code)
 
-		floor_received.emit(data)
+	if response_code != 200:
+		print("Erreur HTTP Player : ", response_code)
+		return
+
+	var response_text := body.get_string_from_utf8()
+
+	var json := JSON.new()
+	var parse_result := json.parse(response_text)
+
+	if parse_result != OK:
+		print("Erreur JSON Player : ", json.get_error_message())
+		return
+
+	var data = json.data
+
+	if typeof(data) != TYPE_DICTIONARY:
+		print("Erreur : la réponse Player n'est pas un objet JSON")
+		return
+
+	print("Player reçu : ", data.get("player_id", "Inconnu"))
+	print(
+		"Zones débloquées : ",
+		data.get("unlocks", {}).get("zones", [])
+	)
+
+	player_received.emit(data)

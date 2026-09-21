@@ -8,7 +8,7 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_right = -200.0
-offset_bottom = -560.0
+offset_bottom = -540.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_acfot")
@@ -28,3 +28,11 @@ offset_bottom = 80.0
 text = "Nom de zone"
 horizontal_alignment = 1
 autowrap_mode = 2
+
+[node name="ZoneStatus" type="Label" parent="."]
+layout_mode = 0
+offset_top = 70.0
+offset_right = 160.0
+offset_bottom = 95.0
+text = "Verrouillée"
+horizontal_alignment = 1

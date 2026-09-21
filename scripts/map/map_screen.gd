@@ -12,22 +12,46 @@ var is_dragging := false
 var last_pointer_position := Vector2.ZERO
 var map_bounds := Rect2()
 
+var floor_data: Dictionary = {}
+var player_data: Dictionary = {}
+
 const MAP_SCALE := 20.0
 const MAP_PADDING := 250.0
 
 func _ready() -> void:
 	ApiClient.floor_received.connect(_on_floor_received)
+	ApiClient.player_received.connect(_on_player_received)
 
 	ApiClient.get_floor("floor_3")
+	ApiClient.get_player("Newsimi")
 
 
-func _on_floor_received(floor_data: Dictionary) -> void:
-	print("MapScreen a reçu : ", floor_data.get("name"))
+func _on_floor_received(data: Dictionary) -> void:
+	print("MapScreen a reçu le Floor : ", data.get("name"))
+
+	floor_data = data
+	try_build_map()
+	
+func _on_player_received(data: Dictionary) -> void:
+	print("MapScreen a reçu le joueur : ", data.get("player_id"))
+
+	player_data = data
+	try_build_map()
+	
+func try_build_map() -> void:
+	if floor_data.is_empty():
+		print("En attente du Floor...")
+		return
+
+	if player_data.is_empty():
+		print("En attente du Player...")
+		return
+
+	print("Floor + Player disponibles : construction de la map")
 
 	floor_title.text = floor_data.get("name", "Étage")
 
 	build_map(floor_data)
-
 
 func build_map(floor_data: Dictionary) -> void:
 	var zones: Array = floor_data.get("zones", [])
@@ -49,7 +73,19 @@ func build_map(floor_data: Dictionary) -> void:
 		return
 
 	for zone in zones:
-		create_zone(zone)
+		var zone_state := get_zone_state(zone)
+
+		print(
+			"Zone : ",
+			zone.get("id", ""),
+			" | état : ",
+			zone_state
+		)
+		
+		if zone_state == "hidden":
+			continue
+		
+		create_zone(zone, zone_state)
 
 	create_connections(connections)
 	
@@ -57,7 +93,7 @@ func build_map(floor_data: Dictionary) -> void:
 	center_on_zone(start_zone_id)
 
 
-func create_zone(zone: Dictionary) -> void:
+func create_zone(zone: Dictionary, zone_state: String) -> void:
 	var position_data: Dictionary = zone.get("position", {})
 
 	var raw_x := float(position_data.get("x", 0))
@@ -78,20 +114,20 @@ func create_zone(zone: Dictionary) -> void:
 
 	zone_positions[zone_id] = map_position
 
-	create_zone_visual(zone, map_position)
+	create_zone_visual(zone, map_position, zone_state)
 	
 
-func create_zone_visual(zone: Dictionary, map_position: Vector2) -> void:
+func create_zone_visual(
+	zone: Dictionary,
+	map_position: Vector2,
+	zone_state: String
+) -> void:
 	var zone_node = ZONE_NODE_SCENE.instantiate()
 
 	map_container.add_child(zone_node)
 
-	zone_node.setup(zone)
-
-	# Notre ZoneNode fait 160 × 80.
-	# On décale de 80 px pour que son centre horizontal
-	# corresponde exactement à la coordonnée de la map.
 	zone_node.position = map_position - Vector2(80, 16)
+	zone_node.setup(zone, zone_state)
 	
 func create_connections(connections: Array) -> void:
 	for connection in connections:
@@ -203,3 +239,18 @@ func clamp_map_position() -> void:
 		min_y,
 		max_y
 	)
+
+func get_zone_state(zone: Dictionary) -> String:
+	var zone_id: String = zone.get("id", "")
+	var visibility: String = zone.get("visibility", "visible")
+
+	var unlocks: Dictionary = player_data.get("unlocks", {})
+	var unlocked_zones: Array = unlocks.get("zones", [])
+
+	if zone_id in unlocked_zones:
+		return "unlocked"
+
+	if visibility == "hidden":
+		return "hidden"
+
+	return "locked"
