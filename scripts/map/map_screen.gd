@@ -6,6 +6,7 @@ extends Control
 @onready var map_container: Control = $MapViewport/MapContainer
 
 const ZONE_NODE_SCENE := preload("res://scene/map/ZoneNode.tscn")
+const ZONE_SCREEN_SCENE := preload("res://scene/zone/ZoneScreen.tscn")
 var zone_positions: Dictionary = {}
 
 var is_dragging := false
@@ -128,6 +129,8 @@ func create_zone_visual(
 
 	zone_node.position = map_position - Vector2(80, 16)
 	zone_node.setup(zone, zone_state)
+
+	zone_node.zone_selected.connect(_on_zone_selected)
 	
 func create_connections(connections: Array) -> void:
 	for connection in connections:
@@ -254,3 +257,17 @@ func get_zone_state(zone: Dictionary) -> String:
 		return "hidden"
 
 	return "locked"
+
+func _on_zone_selected(zone: Dictionary) -> void:
+	print("Ouverture de la zone : ", zone.get("id", ""))
+
+	var zone_screen = ZONE_SCREEN_SCENE.instantiate()
+
+	add_child(zone_screen)
+
+	zone_screen.setup(zone)
+
+	zone_screen.back_requested.connect(
+		func():
+			zone_screen.queue_free()
+	)

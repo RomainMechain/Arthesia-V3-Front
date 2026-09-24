@@ -1,0 +1,62 @@
+[gd_scene load_steps=4 format=3 uid="uid://dpk8acjfdi6qm"]
+
+[ext_resource type="Script" uid="uid://4f322ldg0krt" path="res://scripts/zone/zone_screen.gd" id="1_vyen1"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_ffvdf"]
+font_size = 26
+
+[sub_resource type="LabelSettings" id="LabelSettings_vyen1"]
+font_size = 13
+
+[node name="ZoneScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_vyen1")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.10747976, 0.10747973, 0.10747973, 1)
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 15.0
+offset_top = 20.0
+offset_right = 134.0
+offset_bottom = 60.0
+text = "← Retour"
+
+[node name="ZoneTitle" type="Label" parent="."]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 80.0
+offset_right = 340.0
+offset_bottom = 125.0
+text = "Nom de la zone"
+label_settings = SubResource("LabelSettings_ffvdf")
+horizontal_alignment = 1
+
+[node name="ZoneDescription" type="Label" parent="."]
+layout_mode = 0
+offset_left = 25.0
+offset_top = 140.0
+offset_right = 335.0
+offset_bottom = 235.0
+text = "Description de la zone..."
+label_settings = SubResource("LabelSettings_vyen1")
+autowrap_mode = 3
+
+[node name="CategoriesContainer" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_left = 25.0
+offset_top = 290.0
+offset_right = 335.0
+offset_bottom = 610.0

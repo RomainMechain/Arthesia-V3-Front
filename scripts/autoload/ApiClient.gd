@@ -8,7 +8,7 @@ var current_request := ""
 
 signal floor_received(data)
 signal player_received(data)
-
+signal zone_received(data)
 
 func _ready() -> void:
 	pass
@@ -73,6 +73,30 @@ func get_player(player_id: String) -> void:
 
 	if error != OK:
 		print("Erreur lors de la requête Player : ", error)
+		http.queue_free()
+		
+func get_zone(zone_id: String) -> void:
+	var http := HTTPRequest.new()
+	add_child(http)
+
+	http.request_completed.connect(
+		func(result, response_code, headers, body):
+			_on_zone_request_completed(
+				http,
+				result,
+				response_code,
+				headers,
+				body
+			)
+	)
+
+	var url := BASE_URL + "/content/zones/" + zone_id
+	print("GET ", url)
+
+	var error := http.request(url)
+
+	if error != OK:
+		print("Erreur lors de la requête Zone : ", error)
 		http.queue_free()
 		
 func _on_floor_request_completed(
@@ -146,3 +170,38 @@ func _on_player_request_completed(
 	)
 
 	player_received.emit(data)
+
+func _on_zone_request_completed(
+	http: HTTPRequest,
+	result: int,
+	response_code: int,
+	headers: PackedStringArray,
+	body: PackedByteArray
+) -> void:
+	http.queue_free()
+
+	print("Zone HTTP status : ", response_code)
+
+	if response_code != 200:
+		print("Erreur HTTP Zone : ", response_code)
+		return
+
+	var response_text := body.get_string_from_utf8()
+
+	var json := JSON.new()
+	var parse_result := json.parse(response_text)
+
+	if parse_result != OK:
+		print("Erreur JSON Zone : ", json.get_error_message())
+		return
+
+	var data = json.data
+
+	if typeof(data) != TYPE_DICTIONARY:
+		print("Erreur : la réponse Zone n'est pas un objet JSON")
+		return
+
+	print("Zone reçue : ", data.get("name", "Sans nom"))
+	print("Nombre d'entries : ", data.get("entries", []).size())
+
+	zone_received.emit(data)
