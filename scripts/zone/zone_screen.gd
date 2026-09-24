@@ -8,6 +8,7 @@ signal back_requested
 @onready var zone_title: Label = $ZoneTitle
 @onready var zone_description: Label = $ZoneDescription
 @onready var categories_container: VBoxContainer = $CategoriesContainer
+@onready var entries_container: VBoxContainer = $EntriesContainer
 
 
 var zone_data: Dictionary = {}
@@ -69,8 +70,11 @@ func build_categories(entries: Array) -> void:
 			get_category_name(template_type),
 			count
 		]
-
 		button.custom_minimum_size = Vector2(0, 55)
+		button.pressed.connect(
+			func():
+				open_category(template_type)
+		)
 		categories_container.add_child(button)
 	
 	
@@ -90,3 +94,55 @@ func get_category_name(template_type: String) -> String:
 			return "🔎 Exploration"
 		_:
 			return template_type
+
+
+func open_category(template_type: String) -> void:
+	var entries: Array = zone_data.get("entries", [])
+	var filtered_entries: Array = []
+
+	for entry in entries:
+		if entry.get("template_type", "") == template_type:
+			filtered_entries.append(entry)
+
+	show_category_entries(
+		template_type,
+		filtered_entries
+	)
+
+
+func show_category_entries(
+	template_type: String,
+	entries: Array
+) -> void:
+	categories_container.visible = false
+	entries_container.visible = true
+
+	# Nettoie l'ancien contenu.
+	for child in entries_container.get_children():
+		child.queue_free()
+
+	var back_categories_button := Button.new()
+	back_categories_button.text = "← Catégories"
+	back_categories_button.custom_minimum_size = Vector2(0, 45)
+
+	back_categories_button.pressed.connect(
+		func():
+			show_categories()
+	)
+
+	entries_container.add_child(back_categories_button)
+
+	for entry in entries:
+		var button := Button.new()
+
+		button.text = entry.get(
+			"template_id",
+			entry.get("id", "Entrée")
+		)
+
+		button.custom_minimum_size = Vector2(0, 50)
+		entries_container.add_child(button)
+		
+func show_categories() -> void:
+	entries_container.visible = false
+	categories_container.visible = true
