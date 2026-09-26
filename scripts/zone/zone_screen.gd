@@ -12,11 +12,14 @@ signal back_requested
 
 
 var zone_data: Dictionary = {}
-
+var loaded_templates: Dictionary = {}
+var expected_template_count := 0
+var current_category_entries: Array = []
 
 func _ready() -> void:
 	back_button.pressed.connect(_on_back_button_pressed)
 	ApiClient.zone_received.connect(_on_zone_received)
+	ApiClient.template_received.connect(_on_template_received)
 	
 func _on_zone_received(data: Dictionary) -> void:
 	print("ZoneScreen a reçu la zone complète : ", data.get("id", ""))
@@ -104,11 +107,26 @@ func open_category(template_type: String) -> void:
 		if entry.get("template_type", "") == template_type:
 			filtered_entries.append(entry)
 
+	current_category_entries = filtered_entries
+
+	loaded_templates.clear()
+	expected_template_count = filtered_entries.size()
+
+	for entry in filtered_entries:
+		var template_id: String = entry.get("template_id", "")
+
+		if template_id.is_empty():
+			continue
+
+		ApiClient.get_template(
+			template_type,
+			template_id
+		)
+
 	show_category_entries(
 		template_type,
 		filtered_entries
 	)
-
 
 func show_category_entries(
 	template_type: String,
@@ -135,14 +153,51 @@ func show_category_entries(
 	for entry in entries:
 		var button := Button.new()
 
-		button.text = entry.get(
-			"template_id",
-			entry.get("id", "Entrée")
-		)
+		var template_id: String = entry.get("template_id", "")
+		var display_name := template_id
 
+		if loaded_templates.has(template_id):
+			var template: Dictionary = loaded_templates[template_id]
+
+			display_name = template.get(
+				"name",
+				template_id
+			)
+
+		button.text = display_name
 		button.custom_minimum_size = Vector2(0, 50)
+
 		entries_container.add_child(button)
 		
 func show_categories() -> void:
 	entries_container.visible = false
 	categories_container.visible = true
+
+func _on_template_received(
+	kind: String,
+	template_id: String,
+	data: Dictionary
+) -> void:
+	loaded_templates[template_id] = data
+
+	print(
+		"Template stocké : ",
+		template_id,
+		" | ",
+		data.get("name", "Sans nom")
+	)
+
+	print(
+		"Templates chargés : ",
+		loaded_templates.size(),
+		" / ",
+		expected_template_count
+	)
+
+	if loaded_templates.size() == expected_template_count:
+		print("Tous les templates de la catégorie sont chargés !")
+
+		show_category_entries(
+			kind,
+			current_category_entries
+		)

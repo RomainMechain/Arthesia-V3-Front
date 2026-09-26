@@ -9,6 +9,7 @@ var current_request := ""
 signal floor_received(data)
 signal player_received(data)
 signal zone_received(data)
+signal template_received(kind, template_id, data)
 
 func _ready() -> void:
 	pass
@@ -97,6 +98,39 @@ func get_zone(zone_id: String) -> void:
 
 	if error != OK:
 		print("Erreur lors de la requête Zone : ", error)
+		http.queue_free()
+		
+func get_template(kind: String, template_id: String) -> void:
+	var http := HTTPRequest.new()
+	add_child(http)
+
+	http.request_completed.connect(
+		func(result, response_code, headers, body):
+			_on_template_request_completed(
+				http,
+				kind,
+				template_id,
+				result,
+				response_code,
+				headers,
+				body
+			)
+	)
+
+	var url := (
+		BASE_URL
+		+ "/content/templates/"
+		+ kind
+		+ "/"
+		+ template_id
+	)
+
+	print("GET ", url)
+
+	var error := http.request(url)
+
+	if error != OK:
+		print("Erreur lors de la requête Template : ", error)
 		http.queue_free()
 		
 func _on_floor_request_completed(
@@ -205,3 +239,51 @@ func _on_zone_request_completed(
 	print("Nombre d'entries : ", data.get("entries", []).size())
 
 	zone_received.emit(data)
+
+func _on_template_request_completed(
+	http: HTTPRequest,
+	kind: String,
+	template_id: String,
+	result: int,
+	response_code: int,
+	headers: PackedStringArray,
+	body: PackedByteArray
+) -> void:
+	http.queue_free()
+
+	print("Template HTTP status : ", response_code)
+
+	if response_code != 200:
+		print("Erreur HTTP Template : ", response_code)
+		return
+
+	var response_text := body.get_string_from_utf8()
+
+	var json := JSON.new()
+	var parse_result := json.parse(response_text)
+
+	if parse_result != OK:
+		print(
+			"Erreur JSON Template : ",
+			json.get_error_message()
+		)
+		return
+
+	var data = json.data
+
+	if typeof(data) != TYPE_DICTIONARY:
+		print(
+			"Erreur : la réponse Template n'est pas un objet JSON"
+		)
+		return
+
+	print(
+		"Template reçu : ",
+		data.get("id", "Sans id")
+	)
+
+	template_received.emit(
+		kind,
+		template_id,
+		data
+	)
