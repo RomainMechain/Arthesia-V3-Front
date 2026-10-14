@@ -3,13 +3,14 @@ extends Control
 
 signal back_requested
 
-
 @onready var back_button: Button = $BackButton
 @onready var zone_title: Label = $ZoneTitle
 @onready var zone_description: Label = $ZoneDescription
 @onready var categories_container: VBoxContainer = $CategoriesContainer
 @onready var entries_container: VBoxContainer = $EntriesContainer
+@onready var entry_detail_container: VBoxContainer = $EntryDetailContainer
 
+const COMBAT_SCREEN_SCENE := preload("res://scene/combat/CombatScreen.tscn")
 
 var zone_data: Dictionary = {}
 var loaded_templates: Dictionary = {}
@@ -166,6 +167,11 @@ func show_category_entries(
 
 		button.text = display_name
 		button.custom_minimum_size = Vector2(0, 50)
+		
+		button.pressed.connect(
+			func():
+				open_entry_detail(entry)
+		)
 
 		entries_container.add_child(button)
 		
@@ -201,3 +207,90 @@ func _on_template_received(
 			kind,
 			current_category_entries
 		)
+
+func open_entry_detail(entry: Dictionary) -> void:
+	entries_container.visible = false
+	entry_detail_container.visible = true
+
+	for child in entry_detail_container.get_children():
+		child.queue_free()
+
+	var template_id: String = entry.get("template_id", "")
+	var template: Dictionary = loaded_templates.get(template_id, {})
+
+	var back_button_detail := Button.new()
+	back_button_detail.text = "← Liste"
+	back_button_detail.custom_minimum_size = Vector2(0, 45)
+	back_button_detail.pressed.connect(
+		func():
+			entry_detail_container.visible = false
+			entries_container.visible = true
+	)
+	entry_detail_container.add_child(back_button_detail)
+
+	var name_label := Label.new()
+	name_label.text = template.get("name", template_id)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	entry_detail_container.add_child(name_label)
+	
+	# ============ MONSTER =============
+	if entry.get("template_type", "") == "monster":
+		var level_label := Label.new()
+		level_label.text = "Niveau %d" % int(template.get("level", 1))
+		entry_detail_container.add_child(level_label)
+
+		var stats: Dictionary = template.get("stats", {})
+
+		var stats_label := Label.new()
+		stats_label.text = (
+			"PV : %d\n" +
+			"ATK : %d | DEF : %d\n" +
+			"AGI : %d | INT : %d | SAG : %d"
+		) % [
+			int(stats.get("hp", 0)),
+			int(stats.get("atk", 0)),
+			int(stats.get("def", 0)),
+			int(stats.get("agi", 0)),
+			int(stats.get("int", 0)),
+			int(stats.get("sag", 0))
+		]
+
+		entry_detail_container.add_child(stats_label)
+
+	var description_label := Label.new()
+	description_label.text = template.get(
+		"description",
+		"Aucune description disponible."
+	)
+	description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	entry_detail_container.add_child(description_label)
+	
+	if entry.get("template_type", "") == "monster":
+		var fight_button := Button.new()
+		fight_button.text = "⚔ Combattre"
+		fight_button.custom_minimum_size = Vector2(0, 50)
+
+		fight_button.pressed.connect(
+			func():
+				open_combat(entry)
+		)
+
+		entry_detail_container.add_child(fight_button)
+
+	print("Fiche ouverte : ", entry.get("id", ""))
+
+func open_combat(entry: Dictionary) -> void:
+	var combat_screen = COMBAT_SCREEN_SCENE.instantiate()
+
+	add_child(combat_screen)
+	combat_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	combat_screen.prepare_combat(
+		zone_data.get("id", ""),
+		entry
+	)
+
+	combat_screen.back_requested.connect(
+		func():
+			combat_screen.queue_free()
+	)

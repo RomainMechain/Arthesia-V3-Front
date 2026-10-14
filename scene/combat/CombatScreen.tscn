@@ -1,0 +1,102 @@
+[gd_scene load_steps=2 format=3 uid="uid://da1x1qsekih0q"]
+
+[ext_resource type="Script" uid="uid://by81sf5exgo04" path="res://scripts/combat/combat_screen.gd" id="1_elc0o"]
+
+[node name="CombatScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_elc0o")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 0
+offset_right = 360.0
+offset_bottom = 640.0
+color = Color(0.11119685, 0.11119684, 0.11119684, 1)
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 15.0
+offset_top = 20.0
+offset_right = 115.0
+offset_bottom = 60.0
+text = "← Retour"
+
+[node name="MonsterName" type="Label" parent="."]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 90.0
+offset_right = 340.0
+offset_bottom = 130.0
+text = "Monster Name"
+horizontal_alignment = 1
+
+[node name="MonsterHP" type="ProgressBar" parent="."]
+layout_mode = 0
+offset_left = 25.0
+offset_top = 150.0
+offset_right = 335.0
+offset_bottom = 177.0
+max_value = 280.0
+value = 280.0
+
+[node name="MonsterHPLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 25.0
+offset_top = 178.0
+offset_right = 335.0
+offset_bottom = 203.0
+text = "280/280"
+
+[node name="PlayerHP" type="ProgressBar" parent="."]
+modulate = Color(1, 0, 0, 1)
+layout_mode = 0
+offset_left = 25.0
+offset_top = 340.0
+offset_right = 335.0
+offset_bottom = 367.0
+max_value = 205.0
+value = 205.0
+
+[node name="PlayerHPLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 25.0
+offset_top = 368.0
+offset_right = 335.0
+offset_bottom = 393.0
+text = "205/205"
+
+[node name="PlayerMana" type="ProgressBar" parent="."]
+modulate = Color(0, 1, 1, 1)
+layout_mode = 0
+offset_left = 25.0
+offset_top = 405.0
+offset_right = 335.0
+offset_bottom = 432.0
+max_value = 77.0
+value = 77.0
+
+[node name="PlayerManaLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 25.0
+offset_top = 433.0
+offset_right = 335.0
+offset_bottom = 458.0
+text = "77/77"
+
+[node name="AttackButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 25.0
+offset_top = 500.0
+offset_right = 335.0
+offset_bottom = 555.0
+text = "⚔ Attaque basique"
+
+[node name="CombatLog" type="RichTextLabel" parent="."]
+layout_mode = 0
+offset_left = 25.0
+offset_top = 565.0
+offset_right = 335.0
+offset_bottom = 630.0
+
+[node name="AttackCooldownTimer" type="Timer" parent="."]
+one_shot = true
