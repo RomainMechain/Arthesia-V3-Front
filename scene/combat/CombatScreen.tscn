@@ -51,36 +51,36 @@ text = "280/280"
 modulate = Color(1, 0, 0, 1)
 layout_mode = 0
 offset_left = 25.0
-offset_top = 340.0
+offset_top = 267.0
 offset_right = 335.0
-offset_bottom = 367.0
+offset_bottom = 294.0
 max_value = 205.0
 value = 205.0
 
 [node name="PlayerHPLabel" type="Label" parent="."]
 layout_mode = 0
 offset_left = 25.0
-offset_top = 368.0
+offset_top = 295.0
 offset_right = 335.0
-offset_bottom = 393.0
+offset_bottom = 320.0
 text = "205/205"
 
 [node name="PlayerMana" type="ProgressBar" parent="."]
 modulate = Color(0, 1, 1, 1)
 layout_mode = 0
 offset_left = 25.0
-offset_top = 405.0
+offset_top = 332.0
 offset_right = 335.0
-offset_bottom = 432.0
+offset_bottom = 359.0
 max_value = 77.0
 value = 77.0
 
 [node name="PlayerManaLabel" type="Label" parent="."]
 layout_mode = 0
 offset_left = 25.0
-offset_top = 433.0
+offset_top = 360.0
 offset_right = 335.0
-offset_bottom = 458.0
+offset_bottom = 385.0
 text = "77/77"
 
 [node name="AttackButton" type="Button" parent="."]
@@ -100,3 +100,19 @@ offset_bottom = 630.0
 
 [node name="AttackCooldownTimer" type="Timer" parent="."]
 one_shot = true
+
+[node name="SkillButton" type="Button" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 91.0
+offset_top = 461.0
+offset_right = 270.0
+offset_bottom = 492.0
+text = "🐗 Charge du sanglier"
+
+[node name="SkillsContainer" type="HBoxContainer" parent="."]
+layout_mode = 0
+offset_left = 28.0
+offset_top = 400.0
+offset_right = 334.0
+offset_bottom = 496.0

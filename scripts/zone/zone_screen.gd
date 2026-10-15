@@ -16,6 +16,7 @@ var zone_data: Dictionary = {}
 var loaded_templates: Dictionary = {}
 var expected_template_count := 0
 var current_category_entries: Array = []
+var player_data: Dictionary = {}
 
 func _ready() -> void:
 	back_button.pressed.connect(_on_back_button_pressed)
@@ -38,8 +39,9 @@ func _on_zone_received(data: Dictionary) -> void:
 	build_categories(entries)
 
 
-func setup(data: Dictionary) -> void:
+func setup(data: Dictionary, player: Dictionary) -> void:
 	zone_data = data
+	player_data = player
 
 	zone_title.text = data.get("name", "Zone")
 	zone_description.text = data.get(
@@ -287,7 +289,8 @@ func open_combat(entry: Dictionary) -> void:
 
 	combat_screen.prepare_combat(
 		zone_data.get("id", ""),
-		entry
+		entry,
+		player_data
 	)
 
 	combat_screen.back_requested.connect(

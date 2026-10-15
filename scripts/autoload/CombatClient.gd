@@ -83,3 +83,16 @@ func basic_attack() -> void:
 
 	socket.send_text(JSON.stringify(message))
 	print("Attaque basique envoyée")
+
+func use_skill(skill_id: String) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		print("Impossible d'utiliser la compétence : WebSocket non connecté")
+		return
+
+	var message := {
+		"action": "use_skill",
+		"skill_id": skill_id
+	}
+
+	socket.send_text(JSON.stringify(message))
+	print("Compétence envoyée : ", skill_id)

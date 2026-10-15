@@ -19,6 +19,8 @@ var player_data: Dictionary = {}
 const MAP_SCALE := 20.0
 const MAP_PADDING := 250.0
 
+var map_initialized := false
+
 func _ready() -> void:
 	ApiClient.floor_received.connect(_on_floor_received)
 	ApiClient.player_received.connect(_on_player_received)
@@ -35,6 +37,9 @@ func _on_floor_received(data: Dictionary) -> void:
 	
 func _on_player_received(data: Dictionary) -> void:
 	print("MapScreen a reçu le joueur : ", data.get("player_id"))
+	
+	print("MapScreen : données joueur actualisées")
+	print("Zones débloquées : ", data.get("unlocks", {}).get("zones", []))
 
 	player_data = data
 	try_build_map()
@@ -57,6 +62,10 @@ func try_build_map() -> void:
 func build_map(floor_data: Dictionary) -> void:
 	var zones: Array = floor_data.get("zones", [])
 	var connections: Array = floor_data.get("connections", [])
+	
+	# Supprimer les anciens éléments générés de la carte.
+	for child in map_container.get_children():
+		child.queue_free()
 
 	zone_positions.clear()
 
@@ -90,8 +99,10 @@ func build_map(floor_data: Dictionary) -> void:
 
 	create_connections(connections)
 	
-	var start_zone_id: String = floor_data.get("start_zone_id", "")
-	center_on_zone(start_zone_id)
+	if not map_initialized:
+		var start_zone_id: String = floor_data.get("start_zone_id", "")
+		center_on_zone(start_zone_id)
+		map_initialized = true
 
 
 func create_zone(zone: Dictionary, zone_state: String) -> void:
@@ -265,7 +276,7 @@ func _on_zone_selected(zone: Dictionary) -> void:
 
 	add_child(zone_screen)
 
-	zone_screen.setup(zone)
+	zone_screen.setup(zone, player_data)
 
 	zone_screen.back_requested.connect(
 		func():
