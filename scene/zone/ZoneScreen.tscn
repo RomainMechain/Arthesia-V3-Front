@@ -34,45 +34,44 @@ offset_right = 134.0
 offset_bottom = 60.0
 text = "← Retour"
 
-[node name="ZoneTitle" type="Label" parent="."]
-layout_mode = 0
-offset_left = 20.0
-offset_top = 80.0
-offset_right = 340.0
-offset_bottom = 125.0
+[node name="Scroll" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 25.0
+offset_top = 76.0
+offset_right = -25.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="Body" type="VBoxContainer" parent="Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="ZoneTitle" type="Label" parent="Scroll/Body"]
+layout_mode = 2
 text = "Nom de la zone"
 label_settings = SubResource("LabelSettings_ffvdf")
 horizontal_alignment = 1
+autowrap_mode = 3
 
-[node name="ZoneDescription" type="Label" parent="."]
-layout_mode = 0
-offset_left = 25.0
-offset_top = 140.0
-offset_right = 335.0
-offset_bottom = 235.0
+[node name="ZoneDescription" type="Label" parent="Scroll/Body"]
+layout_mode = 2
 text = "Description de la zone..."
 label_settings = SubResource("LabelSettings_vyen1")
 autowrap_mode = 3
 
-[node name="CategoriesContainer" type="VBoxContainer" parent="."]
-layout_mode = 0
-offset_left = 25.0
-offset_top = 290.0
-offset_right = 335.0
-offset_bottom = 610.0
+[node name="CategoriesContainer" type="VBoxContainer" parent="Scroll/Body"]
+layout_mode = 2
 
-[node name="EntriesContainer" type="VBoxContainer" parent="."]
+[node name="EntriesContainer" type="VBoxContainer" parent="Scroll/Body"]
 visible = false
-layout_mode = 0
-offset_left = 25.0
-offset_top = 290.0
-offset_right = 335.0
-offset_bottom = 610.0
+layout_mode = 2
 
-[node name="EntryDetailContainer" type="VBoxContainer" parent="."]
+[node name="EntryDetailContainer" type="VBoxContainer" parent="Scroll/Body"]
 visible = false
-layout_mode = 0
-offset_left = 25.0
-offset_top = 290.0
-offset_right = 335.0
-offset_bottom = 610.0
+layout_mode = 2

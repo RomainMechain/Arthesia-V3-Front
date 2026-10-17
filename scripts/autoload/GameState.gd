@@ -75,6 +75,34 @@ func _set_player(data: Dictionary) -> void:
 	player_changed.emit(player)
 
 
+# Les déblocages arrivent sous la forme "zone:<id>", "skill:<id>", "title:<id>".
+func describe_unlock(unlock: String) -> String:
+	var parts := unlock.split(":", true, 1)
+
+	if parts.size() < 2:
+		return "🔓 " + unlock
+
+	var kind := parts[0]
+	var id := parts[1]
+
+	match kind:
+		"zone":
+			var res := await ApiClient.list_zones()
+
+			if res.ok:
+				for zone in res.data:
+					if zone.get("id", "") == id:
+						return "🗺 Nouvelle zone : " + str(zone.get("name", id))
+
+			return "🗺 Nouvelle zone : " + GameText.prettify_id(id)
+		"skill", "title":
+			var res := await ApiClient.get_template(kind, id)
+			var label := "📖 Nouveau talent : " if kind == "skill" else "🏅 Nouveau titre : "
+			return label + (str(res.data.get("name", id)) if res.ok else GameText.prettify_id(id))
+		_:
+			return "🔓 " + unlock
+
+
 func _resolve_player_id() -> String:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--player="):

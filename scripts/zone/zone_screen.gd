@@ -4,13 +4,15 @@ extends Control
 signal back_requested
 
 @onready var back_button: Button = $BackButton
-@onready var zone_title: Label = $ZoneTitle
-@onready var zone_description: Label = $ZoneDescription
-@onready var categories_container: VBoxContainer = $CategoriesContainer
-@onready var entries_container: VBoxContainer = $EntriesContainer
-@onready var entry_detail_container: VBoxContainer = $EntryDetailContainer
+@onready var zone_title: Label = $Scroll/Body/ZoneTitle
+@onready var zone_description: Label = $Scroll/Body/ZoneDescription
+@onready var scroll: ScrollContainer = $Scroll
+@onready var categories_container: VBoxContainer = $Scroll/Body/CategoriesContainer
+@onready var entries_container: VBoxContainer = $Scroll/Body/EntriesContainer
+@onready var entry_detail_container: VBoxContainer = $Scroll/Body/EntryDetailContainer
 
 const COMBAT_SCREEN_SCENE := preload("res://scene/combat/CombatScreen.tscn")
+const RESOURCE_PANEL_SCRIPT := preload("res://scripts/zone/resource_panel.gd")
 
 # Ordre d'affichage des catégories. Plusieurs template_type peuvent partager
 # une catégorie (boutique PNJ et Autel des Ventes sont tous deux du commerce).
@@ -187,6 +189,7 @@ func load_entry_template(entry: Dictionary) -> void:
 
 
 func show_category_entries(entries: Array) -> void:
+	zone_description.visible = false
 	categories_container.visible = false
 	entry_detail_container.visible = false
 	entries_container.visible = true
@@ -228,6 +231,7 @@ func show_categories() -> void:
 	category_request_id += 1
 	entries_container.visible = false
 	categories_container.visible = true
+	zone_description.visible = true
 
 
 func open_entry_detail(entry: Dictionary) -> void:
@@ -249,6 +253,14 @@ func open_entry_detail(entry: Dictionary) -> void:
 			entries_container.visible = true
 	)
 	entry_detail_container.add_child(back_button_detail)
+	scroll.scroll_vertical = 0
+
+	# ============ RESOURCE =============
+	if entry.get("template_type", "") == "resource":
+		var panel = RESOURCE_PANEL_SCRIPT.new()
+		entry_detail_container.add_child(panel)
+		panel.setup(zone_data.get("id", ""), entry, template)
+		return
 
 	var name_label := Label.new()
 	name_label.text = template.get("name", template_id)

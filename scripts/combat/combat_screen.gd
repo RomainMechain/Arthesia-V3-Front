@@ -468,40 +468,12 @@ func show_victory(data: Dictionary) -> void:
 		lines.append("🌟 Niveau %d atteint !" % int(data.get("player_level", 1)))
 
 	for unlock in data.get("newly_unlocked", []):
-		lines.append(await describe_unlock(str(unlock)))
+		lines.append(await GameState.describe_unlock(str(unlock)))
 
 	show_result("Victoire !", COLOR_HIGHLIGHT, lines)
 
 	# Recharge le joueur : la carte et l'écran Personnage se mettent à jour.
 	GameState.refresh_player()
-
-
-# Les déblocages arrivent sous la forme "zone:<id>", "skill:<id>", "title:<id>".
-func describe_unlock(unlock: String) -> String:
-	var parts := unlock.split(":", true, 1)
-
-	if parts.size() < 2:
-		return "🔓 " + unlock
-
-	var kind := parts[0]
-	var id := parts[1]
-
-	match kind:
-		"zone":
-			var res := await ApiClient.list_zones()
-
-			if res.ok:
-				for zone in res.data:
-					if zone.get("id", "") == id:
-						return "🗺 Nouvelle zone : " + str(zone.get("name", id))
-
-			return "🗺 Nouvelle zone : " + prettify_id(id)
-		"skill", "title":
-			var res := await ApiClient.get_template(kind, id)
-			var label := "📖 Nouveau talent : " if kind == "skill" else "🏅 Nouveau titre : "
-			return label + (str(res.data.get("name", id)) if res.ok else prettify_id(id))
-		_:
-			return "🔓 " + unlock
 
 
 # --- Boutons -----------------------------------------------------------------

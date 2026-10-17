@@ -317,7 +317,53 @@ func render_stats() -> void:
 	stats_error_label = add_label("", 0, COLOR_ERROR)
 	stats_error_label.visible = false
 
+	add_professions_section()
 	update_stats_display()
+
+
+func add_professions_section() -> void:
+	add_section_title("🛠 Métiers")
+
+	var professions: Dictionary = GameState.player.get("professions", {})
+
+	if professions.is_empty():
+		add_label("Aucun métier pratiqué. Récolte des ressources dans les zones pour progresser.", 13, COLOR_MUTED)
+		return
+
+	var thresholds: Dictionary = stats_data.get("profession_xp_to_next_level", {})
+	var profession_ids: Array = professions.keys()
+	profession_ids.sort_custom(
+		func(a, b): return GameText.profession_name(a).naturalnocasecmp_to(GameText.profession_name(b)) < 0
+	)
+
+	for profession_id in profession_ids:
+		var profession: Dictionary = professions[profession_id]
+		var xp := int(profession.get("xp", 0))
+		var xp_needed := int(thresholds.get(profession_id, 0))
+
+		var card := make_card()
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 4)
+		card.add_child(box)
+
+		var row := HBoxContainer.new()
+		var name_label := make_label(GameText.profession_label(profession_id), 15, null, false)
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_label)
+		row.add_child(make_label("Niveau %d" % int(profession.get("level", 1)), 15, COLOR_HIGHLIGHT, false))
+		box.add_child(row)
+
+		if xp_needed > 0:
+			var bar := ProgressBar.new()
+			bar.max_value = xp_needed
+			bar.value = xp
+			bar.show_percentage = false
+			bar.custom_minimum_size = Vector2(0, 8)
+			UiStyle.style_bar(bar, COLOR_BONUS)
+			box.add_child(bar)
+			box.add_child(make_label("%d / %d XP" % [xp, xp_needed], 11, COLOR_MUTED, false))
+
+		content.add_child(card)
 
 
 func build_level_card() -> PanelContainer:
