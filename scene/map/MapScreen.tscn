@@ -45,12 +45,26 @@ grow_vertical = 2
 
 [node name="FloorTitle" type="Label" parent="."]
 layout_mode = 0
-offset_left = 41.0
+offset_left = 20.0
 offset_top = 25.0
-offset_right = 290.0
+offset_right = 240.0
 offset_bottom = 60.0
 text = "Les Archipels Suspendus"
 label_settings = SubResource("LabelSettings_ayafv")
+text_overrun_behavior = 3
+
+[node name="QuestButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -112.0
+offset_top = 22.0
+offset_right = -66.0
+offset_bottom = 66.0
+grow_horizontal = 0
+tooltip_text = "Journal de quêtes"
+text = "📜"
 
 [node name="CharacterButton" type="Button" parent="."]
 layout_mode = 1

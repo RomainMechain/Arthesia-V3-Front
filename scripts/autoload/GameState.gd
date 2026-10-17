@@ -75,6 +75,21 @@ func _set_player(data: Dictionary) -> void:
 	player_changed.emit(player)
 
 
+# Ligne de résumé pour une entrée de quest_progress (combat, récolte).
+func describe_quest_progress(update: Dictionary) -> String:
+	var quest_name := str(update.get("quest_name", update.get("quest_id", "")))
+
+	if update.get("quest_ready", false):
+		return "✅ %s : prête à rendre !" % quest_name
+
+	return "📜 %s : %d / %d" % [quest_name, int(update.get("current", 0)), int(update.get("count", 0))]
+
+
+# État d'une quête pour le joueur courant : "", "active" ou "completed".
+func quest_state(quest_id: String) -> String:
+	return str(player.get("quests", {}).get(quest_id, {}).get("state", ""))
+
+
 # Les déblocages arrivent sous la forme "zone:<id>", "skill:<id>", "title:<id>".
 func describe_unlock(unlock: String) -> String:
 	var parts := unlock.split(":", true, 1)

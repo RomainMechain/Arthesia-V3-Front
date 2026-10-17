@@ -14,6 +14,7 @@ signal _load_finished
 
 const COMBAT_SCREEN_SCENE := preload("res://scene/combat/CombatScreen.tscn")
 const RESOURCE_PANEL_SCRIPT := preload("res://scripts/zone/resource_panel.gd")
+const QUEST_PANEL_SCRIPT := preload("res://scripts/quests/quest_panel.gd")
 
 const COLOR_MUTED := UiStyle.COLOR_MUTED
 const COLOR_BONUS := UiStyle.COLOR_BONUS
@@ -81,6 +82,19 @@ var page_id := 0
 
 func _ready() -> void:
 	back_button.pressed.connect(_on_back_pressed)
+	GameState.player_changed.connect(_on_player_changed)
+
+
+# Une quête acceptée ou rendue peut changer les sous-titres et déverrouiller
+# des entries : la liste est reconstruite (les fiches se mettent à jour seules).
+func _on_player_changed(_player: Dictionary) -> void:
+	if zone_data.get("entries", []).is_empty() or not current_entry.is_empty():
+		return
+
+	await refresh_states()
+
+	if current_entry.is_empty():
+		show_list(false)
 
 
 func setup(data: Dictionary) -> void:
@@ -179,7 +193,7 @@ func _load_item_name(item_id: String, counter: Dictionary) -> void:
 
 func refresh_states() -> void:
 	is_refreshing_state = true
-	var res := await ApiClient.get_json("/zones/%s/state" % zone_data.get("id", ""))
+	var res := await ApiClient.get_zone_state(zone_data.get("id", ""), GameState.player_id)
 	is_refreshing_state = false
 
 	if res.ok:
@@ -359,6 +373,9 @@ func show_list(animate := true) -> void:
 	var groups: Dictionary = {}
 
 	for entry in entries:
+		if entry_states.get(entry.get("id", ""), {}).get("hidden", false):
+			continue
+
 		var category := get_category(entry.get("template_type", ""))
 
 		if not groups.has(category):
@@ -386,7 +403,10 @@ func show_list(animate := true) -> void:
 			add_section_title(category_label(category))
 
 		for entry in groups[category]:
-			body.add_child(build_entry_card(entry, category))
+			if entry_states.get(entry.get("id", ""), {}).get("locked", false):
+				body.add_child(build_locked_card(entry))
+			else:
+				body.add_child(build_entry_card(entry, category))
 
 	if animate:
 		animate_page(false)
@@ -476,6 +496,31 @@ func build_entry_card(entry: Dictionary, category: String) -> Button:
 	return button
 
 
+# Entry dont la condition d'apparition n'est pas remplie : seul l'indice est
+# montré, sans le nom (il fait partie de la découverte).
+func build_locked_card(entry: Dictionary) -> PanelContainer:
+	var card := UiStyle.make_card(Color(0.13, 0.13, 0.14))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	card.add_child(row)
+
+	var icon := make_label("🔒", 20, null, false)
+	icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon.custom_minimum_size = Vector2(28, 0)
+	row.add_child(icon)
+
+	var hint: String = str(entry_states.get(entry.get("id", ""), {}).get("hint", ""))
+
+	if hint.is_empty() or hint == "<null>":
+		hint = "Quelque chose se cache ici..."
+
+	var text := make_label(hint, 12, COLOR_MUTED)
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(text)
+
+	return card
+
+
 func entry_subtitle(entry: Dictionary, template: Dictionary) -> String:
 	match entry.get("template_type", ""):
 		"monster":
@@ -492,8 +537,7 @@ func entry_subtitle(entry: Dictionary, template: Dictionary) -> String:
 		"npc":
 			return str(template.get("role", "Habitant"))
 		"quest_giver":
-			var count: int = template.get("objectives", []).size()
-			return "Quête · %d objectif%s" % [count, "s" if count > 1 else ""]
+			return quest_subtitle(template)
 		"shop":
 			var offers: int = template.get("sell_offers", []).size()
 			return "Boutique · %d article%s" % [offers, "s" if offers > 1 else ""]
@@ -501,6 +545,37 @@ func entry_subtitle(entry: Dictionary, template: Dictionary) -> String:
 			return "Autel des Ventes · entre joueurs"
 		_:
 			return ""
+
+
+func quest_subtitle(template: Dictionary) -> String:
+	var objectives: Array = template.get("objectives", [])
+	var quest_id: String = template.get("id", "")
+
+	match GameState.quest_state(quest_id):
+		"completed":
+			return "Terminée" + (" · répétable" if template.get("repeatable", false) else "")
+		"active":
+			var counters: Array = GameState.player.get("quests", {}).get(quest_id, {}).get("objectives_progress", [])
+			var done := 0
+
+			for index in objectives.size():
+				var objective: Dictionary = objectives[index]
+				var current := 0
+
+				if objective.get("type", "") == "deliver_item":
+					current = int(GameState.player.get("inventory", {}).get(objective.get("item_id", ""), 0))
+				elif index < counters.size():
+					current = int(counters[index].get("current_count", 0))
+
+				if current >= int(objective.get("count", 1)):
+					done += 1
+
+			if done == objectives.size():
+				return "✅ Prête à rendre"
+
+			return "En cours · %d / %d objectif%s" % [done, objectives.size(), "s" if objectives.size() > 1 else ""]
+		_:
+			return "Nouvelle quête · %d objectif%s" % [objectives.size(), "s" if objectives.size() > 1 else ""]
 
 
 # --- Page fiche -----------------------------------------------------------
@@ -526,7 +601,9 @@ func open_entry_detail(entry: Dictionary) -> void:
 		"npc":
 			show_npc_detail(template)
 		"quest_giver":
-			show_quest_detail(template)
+			var quest_panel = QUEST_PANEL_SCRIPT.new()
+			body.add_child(quest_panel)
+			quest_panel.setup(template, true)
 		"shop":
 			show_shop_detail(template)
 		_:
@@ -691,98 +768,6 @@ func show_npc_detail(template: Dictionary) -> void:
 			bubble.modulate.a = 0.0
 			create_tween().tween_property(bubble, "modulate:a", 1.0, 0.2)
 	)
-
-
-# ----- Quête -----
-
-func show_quest_detail(template: Dictionary) -> void:
-	add_detail_header(template.get("name", "Quête"), "📜 Quête" + (" · répétable" if template.get("repeatable", false) else ""))
-	add_description(template)
-
-	var objectives: Array = template.get("objectives", [])
-	var objective_labels: Array = []
-
-	if not objectives.is_empty():
-		var lines: Array = [make_label("Objectifs", 15, null, false)]
-
-		for objective in objectives:
-			var label := make_label("• " + describe_objective(objective), 13)
-			lines.append(label)
-			objective_labels.append([label, objective])
-
-		add_card(lines)
-
-	var rewards: Dictionary = template.get("rewards", {})
-	var reward_lines: Array = [make_label("Récompenses", 15, null, false)]
-
-	if int(rewards.get("xp", 0)) > 0:
-		reward_lines.append(make_label("✨ %d XP" % int(rewards["xp"]), 13, COLOR_BONUS))
-
-	if int(rewards.get("gold", 0)) > 0:
-		reward_lines.append(make_label("💰 %d or" % int(rewards["gold"]), 13, COLOR_HIGHLIGHT))
-
-	var reward_items: Array = rewards.get("items", [])
-	var item_labels: Array = []
-
-	for reward in reward_items:
-		var label := make_label("", 13, COLOR_BONUS)
-		reward_lines.append(label)
-		item_labels.append([label, reward])
-
-	if reward_lines.size() > 1:
-		add_card(reward_lines)
-
-	add_soon_button("Accepter · bientôt disponible")
-
-	# Les cibles des objectifs peuvent venir d'autres zones : leurs noms sont
-	# chargés après l'affichage, comme les objets en récompense.
-	var item_ids: Array = []
-	var target_entries: Array = []
-
-	for reward in reward_items:
-		item_ids.append(str(reward.get("item_id", "")))
-
-	for objective in objectives:
-		match objective.get("type", ""):
-			"kill_count":
-				target_entries.append({"template_type": "monster", "template_id": str(objective.get("monster_id", ""))})
-			"gather_count":
-				target_entries.append({"template_type": "resource", "template_id": str(objective.get("resource_id", ""))})
-			"deliver_item":
-				item_ids.append(str(objective.get("item_id", "")))
-
-	var id := page_id
-	await load_templates(target_entries)
-	await load_item_names(item_ids)
-
-	if id != page_id:
-		return
-
-	for pair in objective_labels:
-		pair[0].text = "• " + describe_objective(pair[1])
-
-	for pair in item_labels:
-		pair[0].text = "🎁 %s ×%d" % [item_names.get(str(pair[1].get("item_id", "")), ""), int(pair[1].get("quantity", 1))]
-
-
-func describe_objective(objective: Dictionary) -> String:
-	var count := int(objective.get("count", 1))
-
-	match objective.get("type", ""):
-		"kill_count":
-			return "Vaincre %d × %s" % [count, name_for_template(str(objective.get("monster_id", "")))]
-		"gather_count":
-			return "Récolter %d × %s" % [count, name_for_template(str(objective.get("resource_id", "")))]
-		"deliver_item":
-			var item_id := str(objective.get("item_id", ""))
-			return "Apporter %d × %s" % [count, item_names.get(item_id, GameText.prettify_id(item_id))]
-		_:
-			return GameText.prettify_id(str(objective.get("type", "")))
-
-
-# Nom d'un monstre ou d'une ressource de la zone, si son template est chargé.
-func name_for_template(template_id: String) -> String:
-	return loaded_templates.get(template_id, {}).get("name", GameText.prettify_id(template_id))
 
 
 # ----- Commerce -----

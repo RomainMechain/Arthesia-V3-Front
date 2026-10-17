@@ -467,6 +467,9 @@ func show_victory(data: Dictionary) -> void:
 	if int(data.get("levels_gained", 0)) > 0:
 		lines.append("🌟 Niveau %d atteint !" % int(data.get("player_level", 1)))
 
+	for update in data.get("quest_progress", []):
+		lines.append(GameState.describe_quest_progress(update))
+
 	for unlock in data.get("newly_unlocked", []):
 		lines.append(await GameState.describe_unlock(str(unlock)))
 

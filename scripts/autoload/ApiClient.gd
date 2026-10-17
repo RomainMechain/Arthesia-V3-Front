@@ -138,6 +138,22 @@ func create_player(player_id: String) -> Dictionary:
 	return await post_json("/players", {"player_id": player_id})
 
 
+# Journal : quêtes démarrées avec définition, progression et zones où les rendre.
+func get_player_quests(player_id: String) -> Dictionary:
+	return await get_json("/players/%s/quests" % player_id)
+
+
+# Disponibilité des entries d'une zone ; avec un joueur, les entries dont la
+# condition d'apparition n'est pas remplie sont marquées locked.
+func get_zone_state(zone_id: String, player_id := "") -> Dictionary:
+	var path := "/zones/%s/state" % zone_id
+
+	if not player_id.is_empty():
+		path += "?player_id=" + player_id.uri_encode()
+
+	return await get_json(path)
+
+
 # Statistiques finales, seuil d'XP du niveau courant et gain par point de stat.
 func get_player_stats(player_id: String) -> Dictionary:
 	return await get_json("/players/%s/stats" % player_id)

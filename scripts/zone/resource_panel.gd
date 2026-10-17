@@ -345,6 +345,9 @@ func show_gather_result(data: Dictionary) -> void:
 		if int(profession.get("levels_gained", 0)) > 0:
 			lines.append("🌟 %s niveau %d !" % [GameText.profession_name(profession_id), int(profession.get("level", 1))])
 
+	for update in data.get("quest_progress", []):
+		lines.append(GameState.describe_quest_progress(update))
+
 	for unlock in data.get("newly_unlocked", []):
 		lines.append(await GameState.describe_unlock(str(unlock)))
 
