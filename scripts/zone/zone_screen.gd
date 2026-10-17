@@ -15,6 +15,8 @@ signal _load_finished
 const COMBAT_SCREEN_SCENE := preload("res://scene/combat/CombatScreen.tscn")
 const RESOURCE_PANEL_SCRIPT := preload("res://scripts/zone/resource_panel.gd")
 const QUEST_PANEL_SCRIPT := preload("res://scripts/quests/quest_panel.gd")
+const SHOP_PANEL_SCRIPT := preload("res://scripts/commerce/shop_panel.gd")
+const MARKET_PANEL_SCRIPT := preload("res://scripts/commerce/market_panel.gd")
 
 const COLOR_MUTED := UiStyle.COLOR_MUTED
 const COLOR_BONUS := UiStyle.COLOR_BONUS
@@ -605,7 +607,13 @@ func open_entry_detail(entry: Dictionary) -> void:
 			body.add_child(quest_panel)
 			quest_panel.setup(template, true)
 		"shop":
-			show_shop_detail(template)
+			var shop_panel = SHOP_PANEL_SCRIPT.new()
+			body.add_child(shop_panel)
+			shop_panel.setup(zone_data.get("id", ""), entry, template)
+		"player_market":
+			var market_panel = MARKET_PANEL_SCRIPT.new()
+			body.add_child(market_panel)
+			market_panel.setup(zone_data.get("id", ""), entry, template)
 		_:
 			show_generic_detail(entry, template)
 
@@ -624,14 +632,6 @@ func add_description(template: Dictionary) -> void:
 
 	if not description.is_empty():
 		add_label(description, 13, COLOR_MUTED)
-
-
-func add_soon_button(text: String) -> void:
-	var button := Button.new()
-	button.text = text
-	button.disabled = true
-	button.custom_minimum_size = Vector2(0, 50)
-	body.add_child(button)
 
 
 # ----- Monstre -----
@@ -770,57 +770,9 @@ func show_npc_detail(template: Dictionary) -> void:
 	)
 
 
-# ----- Commerce -----
-
-func show_shop_detail(template: Dictionary) -> void:
-	add_detail_header(template.get("name", "Boutique"), "🛒 Boutique")
-	add_description(template)
-
-	var offers: Array = template.get("sell_offers", [])
-	var offer_labels: Array = []
-
-	if not offers.is_empty():
-		var lines: Array = [make_label("À vendre", 15, null, false)]
-
-		for offer in offers:
-			var row := HBoxContainer.new()
-			var name_label := make_label(GameText.prettify_id(str(offer.get("item_id", ""))), 13, null, false)
-			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.add_child(name_label)
-			row.add_child(make_label("💰 %d" % int(offer.get("price", 0)), 13, COLOR_HIGHLIGHT, false))
-			lines.append(row)
-			offer_labels.append([name_label, offer])
-
-		add_card(lines)
-
-	add_soon_button("Acheter · bientôt disponible")
-
-	var item_ids: Array = []
-
-	for offer in offers:
-		item_ids.append(str(offer.get("item_id", "")))
-
-	var id := page_id
-	await load_item_names(item_ids)
-
-	if id != page_id:
-		return
-
-	for pair in offer_labels:
-		pair[0].text = item_names.get(str(pair[1].get("item_id", "")), pair[0].text)
-
-
 func show_generic_detail(entry: Dictionary, template: Dictionary) -> void:
-	var meta := ""
-
-	if entry.get("template_type", "") == "player_market":
-		meta = "🛒 Autel des Ventes · échanges entre joueurs"
-
-	add_detail_header(template.get("name", GameText.prettify_id(entry.get("template_id", ""))), meta)
+	add_detail_header(template.get("name", GameText.prettify_id(entry.get("template_id", ""))), "")
 	add_description(template)
-
-	if entry.get("template_type", "") == "player_market":
-		add_soon_button("Ouvrir · bientôt disponible")
 
 
 # --- Navigation ---------------------------------------------------------------

@@ -581,11 +581,17 @@ func submit_allocation() -> void:
 
 	is_submitting = false
 
-	if not res.ok and current_tab == "stats" and is_instance_valid(stats_error_label):
+	if current_tab != "stats" or not is_instance_valid(stats_error_label):
+		return
+
+	if not res.ok:
 		pending_points = allocations
 		stats_error_label.text = "⚠ " + res.error
 		stats_error_label.visible = true
-		update_stats_display()
+
+	# Le rechargement du joueur a redessiné l'onglet pendant l'envoi, boutons
+	# désactivés : on les réactive maintenant que l'envoi est terminé.
+	update_stats_display()
 
 
 # --- Chargement des templates ---------------------------------------------
