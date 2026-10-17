@@ -22,28 +22,40 @@ const MAP_PADDING := 250.0
 var map_initialized := false
 
 func _ready() -> void:
-	ApiClient.floor_received.connect(_on_floor_received)
-	ApiClient.player_received.connect(_on_player_received)
+	GameState.session_failed.connect(_on_session_failed)
+	GameState.player_changed.connect(_on_player_changed)
 
-	ApiClient.get_floor("floor_3")
-	ApiClient.get_player("Newsimi")
+	floor_title.text = "Connexion..."
+
+	if GameState.is_ready:
+		_on_session_ready()
+	else:
+		GameState.session_ready.connect(_on_session_ready)
 
 
-func _on_floor_received(data: Dictionary) -> void:
-	print("MapScreen a reçu le Floor : ", data.get("name"))
+func _on_session_ready() -> void:
+	var res := await ApiClient.get_floor(GameState.floor_id)
 
-	floor_data = data
+	if not res.ok:
+		floor_title.text = "Erreur : " + res.error
+		return
+
+	floor_data = res.data
+	player_data = GameState.player
 	try_build_map()
-	
-func _on_player_received(data: Dictionary) -> void:
-	print("MapScreen a reçu le joueur : ", data.get("player_id"))
-	
-	print("MapScreen : données joueur actualisées")
-	print("Zones débloquées : ", data.get("unlocks", {}).get("zones", []))
 
+
+func _on_session_failed(message: String) -> void:
+	floor_title.text = "Erreur : " + message
+
+
+# Rejoue la construction quand le joueur change, par exemple après une
+# victoire qui débloque une nouvelle zone.
+func _on_player_changed(data: Dictionary) -> void:
 	player_data = data
 	try_build_map()
-	
+
+
 func try_build_map() -> void:
 	if floor_data.is_empty():
 		print("En attente du Floor...")
@@ -276,7 +288,7 @@ func _on_zone_selected(zone: Dictionary) -> void:
 
 	add_child(zone_screen)
 
-	zone_screen.setup(zone, player_data)
+	zone_screen.setup(zone)
 
 	zone_screen.back_requested.connect(
 		func():

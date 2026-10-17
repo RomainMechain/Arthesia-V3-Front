@@ -13,7 +13,6 @@ signal back_requested
 @onready var attack_button: Button = $AttackButton
 @onready var combat_log: RichTextLabel = $CombatLog
 @onready var attack_cooldown_timer: Timer = $AttackCooldownTimer
-@onready var skill_button: Button = $SkillButton
 @onready var skills_container: HBoxContainer = $SkillsContainer
 
 var selected_entry: Dictionary = {}
@@ -55,13 +54,12 @@ func setup_combat(data: Dictionary) -> void:
 
 func prepare_combat(
 	zone_id: String,
-	entry: Dictionary,
-	player: Dictionary
+	entry: Dictionary
 ) -> void:
 	selected_zone_id = zone_id
 	selected_entry = entry
 
-	equipped_skills = player.get("skills", {}).get("equipped_active", []).duplicate()
+	equipped_skills = GameState.player.get("skills", {}).get("equipped_active", []).duplicate()
 	
 	build_skill_buttons()
 
@@ -74,7 +72,7 @@ func prepare_combat(
 
 func _on_combat_connected() -> void:
 	CombatClient.start_combat(
-		"Newsimi",
+		GameState.player_id,
 		selected_zone_id,
 		selected_entry.get("id", "")
 	)
@@ -192,7 +190,7 @@ func _on_combat_message(data: Dictionary) -> void:
 	elif event_type == "combat_won":
 		finish_combat(true)
 		show_victory_rewards(data)
-		ApiClient.get_player("Newsimi")
+		GameState.refresh_player()
 
 	elif event_type == "combat_won_no_reward":
 		print("Victoire sans récompense : ", data)
@@ -272,17 +270,6 @@ func show_victory_rewards(data: Dictionary) -> void:
 			"🌟 Niveau supérieur ! Niveau %d\n" % player_level
 		)
 		
-func _on_player_refreshed(data: Dictionary) -> void:
-	equipped_skills = data.get("skills", {}).get("equipped_active", [])
-
-	print("Compétences actives équipées : ", equipped_skills)
-
-func _on_skill_pressed() -> void:
-	if combat_finished:
-		return
-
-	CombatClient.use_skill("charge_du_sanglier")
-	
 func build_skill_buttons() -> void:
 	skill_buttons.clear()
 
@@ -350,4 +337,3 @@ func _ready() -> void:
 	attack_button.pressed.connect(_on_attack_pressed)
 	attack_cooldown_timer.timeout.connect(_on_attack_cooldown_finished)
 	attack_button.disabled = true
-	ApiClient.player_received.connect(_on_player_refreshed)

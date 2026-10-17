@@ -12,7 +12,8 @@ func connect_to_combat() -> void:
 	socket = WebSocketPeer.new()
 	is_connected = false
 	
-	var url := "ws://127.0.0.1:8000/ws/combat"
+	# Même serveur que l'API HTTP : http:// devient ws://, https:// devient wss://.
+	var url := ApiClient.BASE_URL.replace("http", "ws") + "/ws/combat"
 
 	print("Connexion WebSocket : ", url)
 

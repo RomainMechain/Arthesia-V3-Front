@@ -1,289 +1,138 @@
 extends Node
 
+# Client HTTP du serveur Arthesia.
+#
+# Toutes les requêtes passent par request_json(), qui renvoie un dictionnaire
+# de résultat à attendre avec await :
+#
+#     var res := await ApiClient.get_floor("floor_1")
+#     if res.ok:
+#         print(res.data)
+#
+# Clés du résultat : ok (bool), status (code HTTP, 0 si le serveur est
+# injoignable), data (JSON décodé) et error (message lisible si ok est faux).
+
 const BASE_URL := "http://127.0.0.1:8000"
 
-var http: HTTPRequest
-var current_request := ""
+# Le contenu statique (étages, zones, templates) ne change pas pendant une
+# session : on le garde en mémoire pour ne pas le redemander à chaque écran.
+var _content_cache: Dictionary = {}
 
 
-signal floor_received(data)
-signal player_received(data)
-signal zone_received(data)
-signal template_received(kind, template_id, data)
-
-func _ready() -> void:
-	pass
-
-
-func health_check() -> void:
-	current_request = "health"
-
-	var url := BASE_URL + "/health"
-
-	print("GET ", url)
-
-	var error := http.request(url)
-
-	if error != OK:
-		print("Erreur lors de la requête : ", error)
-
-
-func get_floor(floor_id: String) -> void:
+func request_json(
+	method: HTTPClient.Method,
+	path: String,
+	body = null
+) -> Dictionary:
 	var http := HTTPRequest.new()
 	add_child(http)
 
-	http.request_completed.connect(
-		func(result, response_code, headers, body):
-			_on_floor_request_completed(
-				http,
-				result,
-				response_code,
-				headers,
-				body
-			)
-	)
+	var headers := PackedStringArray()
+	var body_text := ""
 
-	var url := BASE_URL + "/content/floors/" + floor_id
-	print("GET ", url)
+	if body != null:
+		headers.append("Content-Type: application/json")
+		body_text = JSON.stringify(body)
 
-	var error := http.request(url)
+	var url := BASE_URL + path
+	var error := http.request(url, headers, method, body_text)
 
 	if error != OK:
-		print("Erreur lors de la requête Floor : ", error)
 		http.queue_free()
-		
-func get_player(player_id: String) -> void:
-	var http := HTTPRequest.new()
-	add_child(http)
+		return _failure(0, "Requête impossible vers %s (erreur %d)" % [path, error])
 
-	http.request_completed.connect(
-		func(result, response_code, headers, body):
-			_on_player_request_completed(
-				http,
-				result,
-				response_code,
-				headers,
-				body
-			)
-	)
-
-	var url := BASE_URL + "/players/" + player_id
-	print("GET ", url)
-
-	var error := http.request(url)
-
-	if error != OK:
-		print("Erreur lors de la requête Player : ", error)
-		http.queue_free()
-		
-func get_zone(zone_id: String) -> void:
-	var http := HTTPRequest.new()
-	add_child(http)
-
-	http.request_completed.connect(
-		func(result, response_code, headers, body):
-			_on_zone_request_completed(
-				http,
-				result,
-				response_code,
-				headers,
-				body
-			)
-	)
-
-	var url := BASE_URL + "/content/zones/" + zone_id
-	print("GET ", url)
-
-	var error := http.request(url)
-
-	if error != OK:
-		print("Erreur lors de la requête Zone : ", error)
-		http.queue_free()
-		
-func get_template(kind: String, template_id: String) -> void:
-	var http := HTTPRequest.new()
-	add_child(http)
-
-	http.request_completed.connect(
-		func(result, response_code, headers, body):
-			_on_template_request_completed(
-				http,
-				kind,
-				template_id,
-				result,
-				response_code,
-				headers,
-				body
-			)
-	)
-
-	var url := (
-		BASE_URL
-		+ "/content/templates/"
-		+ kind
-		+ "/"
-		+ template_id
-	)
-
-	print("GET ", url)
-
-	var error := http.request(url)
-
-	if error != OK:
-		print("Erreur lors de la requête Template : ", error)
-		http.queue_free()
-		
-func _on_floor_request_completed(
-	http: HTTPRequest,
-	result: int,
-	response_code: int,
-	headers: PackedStringArray,
-	body: PackedByteArray
-) -> void:
+	var response: Array = await http.request_completed
 	http.queue_free()
 
-	print("Floor HTTP status : ", response_code)
+	var result: int = response[0]
+	var status: int = response[1]
+	var response_body: PackedByteArray = response[3]
 
-	if response_code != 200:
-		print("Erreur HTTP Floor : ", response_code)
-		return
+	if result != HTTPRequest.RESULT_SUCCESS:
+		return _failure(0, "Serveur injoignable (%s)" % path)
 
-	var response_text := body.get_string_from_utf8()
+	var data = JSON.parse_string(response_body.get_string_from_utf8())
 
-	var json := JSON.new()
-	var parse_result := json.parse(response_text)
+	if status < 200 or status >= 300:
+		# FastAPI renvoie ses erreurs sous la forme {"detail": "..."}.
+		var message := "Erreur HTTP %d" % status
 
-	if parse_result != OK:
-		print("Erreur JSON Floor : ", json.get_error_message())
-		return
+		if typeof(data) == TYPE_DICTIONARY and data.has("detail"):
+			message = str(data["detail"])
 
-	var data = json.data
+		return _failure(status, message)
 
-	if typeof(data) != TYPE_DICTIONARY:
-		print("Erreur : la réponse Floor n'est pas un objet JSON")
-		return
+	return {"ok": true, "status": status, "data": data, "error": ""}
 
-	print("Floor reçu : ", data.get("name", "Sans nom"))
 
-	floor_received.emit(data)
-	
-func _on_player_request_completed(
-	http: HTTPRequest,
-	result: int,
-	response_code: int,
-	headers: PackedStringArray,
-	body: PackedByteArray
-) -> void:
-	http.queue_free()
+func get_json(path: String) -> Dictionary:
+	return await request_json(HTTPClient.METHOD_GET, path)
 
-	print("Player HTTP status : ", response_code)
 
-	if response_code != 200:
-		print("Erreur HTTP Player : ", response_code)
-		return
+func post_json(path: String, body: Dictionary) -> Dictionary:
+	return await request_json(HTTPClient.METHOD_POST, path, body)
 
-	var response_text := body.get_string_from_utf8()
 
-	var json := JSON.new()
-	var parse_result := json.parse(response_text)
+func get_content(path: String) -> Dictionary:
+	if _content_cache.has(path):
+		return _content_cache[path]
 
-	if parse_result != OK:
-		print("Erreur JSON Player : ", json.get_error_message())
-		return
+	var res := await get_json(path)
 
-	var data = json.data
+	if res.ok:
+		_content_cache[path] = res
 
-	if typeof(data) != TYPE_DICTIONARY:
-		print("Erreur : la réponse Player n'est pas un objet JSON")
-		return
+	return res
 
-	print("Player reçu : ", data.get("player_id", "Inconnu"))
-	print(
-		"Zones débloquées : ",
-		data.get("unlocks", {}).get("zones", [])
-	)
 
-	player_received.emit(data)
+func _failure(status: int, message: String) -> Dictionary:
+	push_warning("API : " + message)
+	return {"ok": false, "status": status, "data": null, "error": message}
 
-func _on_zone_request_completed(
-	http: HTTPRequest,
-	result: int,
-	response_code: int,
-	headers: PackedStringArray,
-	body: PackedByteArray
-) -> void:
-	http.queue_free()
 
-	print("Zone HTTP status : ", response_code)
+# --- Contenu statique ---------------------------------------------------------
 
-	if response_code != 200:
-		print("Erreur HTTP Zone : ", response_code)
-		return
+func health_check() -> Dictionary:
+	return await get_json("/health")
 
-	var response_text := body.get_string_from_utf8()
 
-	var json := JSON.new()
-	var parse_result := json.parse(response_text)
+func get_floor(floor_id: String) -> Dictionary:
+	return await get_content("/content/floors/" + floor_id)
 
-	if parse_result != OK:
-		print("Erreur JSON Zone : ", json.get_error_message())
-		return
 
-	var data = json.data
+func list_floors() -> Dictionary:
+	return await get_content("/content/floors")
 
-	if typeof(data) != TYPE_DICTIONARY:
-		print("Erreur : la réponse Zone n'est pas un objet JSON")
-		return
 
-	print("Zone reçue : ", data.get("name", "Sans nom"))
-	print("Nombre d'entries : ", data.get("entries", []).size())
+func list_zones() -> Dictionary:
+	return await get_content("/content/zones")
 
-	zone_received.emit(data)
 
-func _on_template_request_completed(
-	http: HTTPRequest,
-	kind: String,
-	template_id: String,
-	result: int,
-	response_code: int,
-	headers: PackedStringArray,
-	body: PackedByteArray
-) -> void:
-	http.queue_free()
+func get_zone(zone_id: String) -> Dictionary:
+	return await get_content("/content/zones/" + zone_id)
 
-	print("Template HTTP status : ", response_code)
 
-	if response_code != 200:
-		print("Erreur HTTP Template : ", response_code)
-		return
+func get_template(kind: String, template_id: String) -> Dictionary:
+	return await get_content("/content/templates/%s/%s" % [kind, template_id])
 
-	var response_text := body.get_string_from_utf8()
 
-	var json := JSON.new()
-	var parse_result := json.parse(response_text)
+# Une entry de zone indique son template_type, qui ne correspond pas toujours
+# au type de template côté serveur : un quest_giver référence une quête.
+func template_kind_for_entry(entry: Dictionary) -> String:
+	var template_type: String = entry.get("template_type", "")
 
-	if parse_result != OK:
-		print(
-			"Erreur JSON Template : ",
-			json.get_error_message()
-		)
-		return
+	match template_type:
+		"quest_giver":
+			return "quest"
+		_:
+			return template_type
 
-	var data = json.data
 
-	if typeof(data) != TYPE_DICTIONARY:
-		print(
-			"Erreur : la réponse Template n'est pas un objet JSON"
-		)
-		return
+# --- Joueur ----------------------------------------------------------------
 
-	print(
-		"Template reçu : ",
-		data.get("id", "Sans id")
-	)
+func get_player(player_id: String) -> Dictionary:
+	return await get_json("/players/" + player_id)
 
-	template_received.emit(
-		kind,
-		template_id,
-		data
-	)
+
+func create_player(player_id: String) -> Dictionary:
+	return await post_json("/players", {"player_id": player_id})
