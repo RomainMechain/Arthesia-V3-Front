@@ -20,6 +20,7 @@ var selected_entry: Dictionary = {}
 var selected_zone_id := ""
 var combat_finished := false
 var equipped_skills: Array = []
+var skill_buttons: Dictionary = {}
 
 func setup_combat(data: Dictionary) -> void:
 	monster_name.text = data.get("monster_name", "Monstre")
@@ -167,6 +168,11 @@ func _on_combat_message(data: Dictionary) -> void:
 				current_mana,
 				player_mana.max_value
 			]
+			
+		var skill_id: String = str(data.get("skill_id", ""))
+		var cooldown: float = float(data.get("next_ready_in", 0.0))
+
+		start_skill_cooldown(skill_id, cooldown)
 
 	elif event_type == "monster_attack":
 		var current_hp: float = float(data.get("player_hp", 0))
@@ -278,23 +284,63 @@ func _on_skill_pressed() -> void:
 	CombatClient.use_skill("charge_du_sanglier")
 	
 func build_skill_buttons() -> void:
+	skill_buttons.clear()
+
 	for child in skills_container.get_children():
 		child.queue_free()
 
 	for skill_id in equipped_skills:
-		var button := Button.new()
+		var id: String = str(skill_id)
 
-		button.text = str(skill_id).replace("_", " ").capitalize()
+		var button := Button.new()
+		button.text = id.replace("_", " ").capitalize()
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.disabled = true
 
 		button.pressed.connect(
 			func():
 				if not combat_finished:
-					CombatClient.use_skill(str(skill_id))
+					CombatClient.use_skill(id)
 		)
 
 		skills_container.add_child(button)
+		skill_buttons[id] = button
+
+func start_skill_cooldown(skill_id: String, duration: float) -> void:
+	if not skill_buttons.has(skill_id):
+		return
+
+	if duration <= 0.0:
+		return
+
+	var button: Button = skill_buttons[skill_id]
+	var original_text: String = skill_id.replace("_", " ").capitalize()
+
+	button.disabled = true
+
+	var timer := Timer.new()
+	timer.one_shot = true
+	timer.wait_time = duration
+	button.add_child(timer)
+
+	timer.timeout.connect(
+		func():
+			if not combat_finished:
+				button.disabled = false
+				button.text = original_text
+
+			timer.queue_free()
+	)
+
+	timer.start()
+
+func _process(_delta: float) -> void:
+	for skill_id in skill_buttons:
+		var button: Button = skill_buttons[skill_id]
+
+		for child in button.get_children():
+			if child is Timer and not child.is_stopped():
+				button.text = "⏳ %.1f s" % child.time_left
 
 func _ready() -> void:
 	back_button.pressed.connect(_on_back_pressed)
