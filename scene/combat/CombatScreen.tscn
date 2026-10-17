@@ -4,106 +4,193 @@
 
 [node name="CombatScreen" type="Control"]
 layout_mode = 3
-anchors_preset = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("1_elc0o")
 
 [node name="Background" type="ColorRect" parent="."]
-layout_mode = 0
-offset_right = 360.0
-offset_bottom = 640.0
-color = Color(0.11119685, 0.11119684, 0.11119684, 1)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.09, 0.08, 0.09, 1)
 
-[node name="BackButton" type="Button" parent="."]
-layout_mode = 0
-offset_left = 15.0
+[node name="Layout" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
 offset_top = 20.0
-offset_right = 115.0
-offset_bottom = 60.0
-text = "← Retour"
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
 
-[node name="MonsterName" type="Label" parent="."]
-layout_mode = 0
+[node name="Header" type="HBoxContainer" parent="Layout"]
+layout_mode = 2
+
+[node name="FleeButton" type="Button" parent="Layout/Header"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "← Fuir"
+
+[node name="StatusLabel" type="Label" parent="Layout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Connexion..."
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="MonsterCard" type="PanelContainer" parent="Layout"]
+layout_mode = 2
+
+[node name="Box" type="VBoxContainer" parent="Layout/MonsterCard"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="MonsterName" type="Label" parent="Layout/MonsterCard/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Monstre"
+text_overrun_behavior = 3
+
+[node name="MonsterLevel" type="Label" parent="Layout/MonsterCard/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Niv. 1"
+
+[node name="MonsterHP" type="ProgressBar" parent="Layout/MonsterCard/Box"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+show_percentage = false
+
+[node name="MonsterHPLabel" type="Label" parent="Layout/MonsterCard/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "0 / 0 PV"
+horizontal_alignment = 2
+
+[node name="PlayerCard" type="PanelContainer" parent="Layout"]
+layout_mode = 2
+
+[node name="Box" type="VBoxContainer" parent="Layout/PlayerCard"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PlayerName" type="Label" parent="Layout/PlayerCard/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Toi"
+
+[node name="PlayerHP" type="ProgressBar" parent="Layout/PlayerCard/Box"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+show_percentage = false
+
+[node name="PlayerHPLabel" type="Label" parent="Layout/PlayerCard/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "0 / 0 PV"
+horizontal_alignment = 2
+
+[node name="PlayerMana" type="ProgressBar" parent="Layout/PlayerCard/Box"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+show_percentage = false
+
+[node name="PlayerManaLabel" type="Label" parent="Layout/PlayerCard/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "0 / 0 Mana"
+horizontal_alignment = 2
+
+[node name="LogCard" type="PanelContainer" parent="Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CombatLog" type="RichTextLabel" parent="Layout/LogCard"]
+layout_mode = 2
+theme_override_font_sizes/normal_font_size = 13
+bbcode_enabled = true
+scroll_following = true
+
+[node name="AttackButton" type="Button" parent="Layout"]
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+disabled = true
+text = "⚔ Attaque"
+
+[node name="AttackCooldown" type="ProgressBar" parent="Layout"]
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+max_value = 1.0
+value = 1.0
+show_percentage = false
+
+[node name="SkillsGrid" type="GridContainer" parent="Layout"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="ResultOverlay" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.65)
+
+[node name="Center" type="CenterContainer" parent="ResultOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 offset_left = 20.0
-offset_top = 90.0
-offset_right = 340.0
-offset_bottom = 130.0
-text = "Monster Name"
+offset_right = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ResultPanel" type="PanelContainer" parent="ResultOverlay/Center"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="Box" type="VBoxContainer" parent="ResultOverlay/Center/ResultPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ResultTitle" type="Label" parent="ResultOverlay/Center/ResultPanel/Box"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "Victoire !"
 horizontal_alignment = 1
 
-[node name="MonsterHP" type="ProgressBar" parent="."]
-layout_mode = 0
-offset_left = 25.0
-offset_top = 150.0
-offset_right = 335.0
-offset_bottom = 177.0
-max_value = 280.0
-value = 280.0
+[node name="ResultDetails" type="VBoxContainer" parent="ResultOverlay/Center/ResultPanel/Box"]
+layout_mode = 2
+theme_override_constants/separation = 4
 
-[node name="MonsterHPLabel" type="Label" parent="."]
-layout_mode = 0
-offset_left = 25.0
-offset_top = 178.0
-offset_right = 335.0
-offset_bottom = 203.0
-text = "280/280"
+[node name="Buttons" type="HBoxContainer" parent="ResultOverlay/Center/ResultPanel/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
 
-[node name="PlayerHP" type="ProgressBar" parent="."]
-modulate = Color(1, 0, 0, 1)
-layout_mode = 0
-offset_left = 25.0
-offset_top = 267.0
-offset_right = 335.0
-offset_bottom = 294.0
-max_value = 205.0
-value = 205.0
+[node name="LeaveButton" type="Button" parent="ResultOverlay/Center/ResultPanel/Box/Buttons"]
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Retour"
 
-[node name="PlayerHPLabel" type="Label" parent="."]
-layout_mode = 0
-offset_left = 25.0
-offset_top = 295.0
-offset_right = 335.0
-offset_bottom = 320.0
-text = "205/205"
-
-[node name="PlayerMana" type="ProgressBar" parent="."]
-modulate = Color(0, 1, 1, 1)
-layout_mode = 0
-offset_left = 25.0
-offset_top = 332.0
-offset_right = 335.0
-offset_bottom = 359.0
-max_value = 77.0
-value = 77.0
-
-[node name="PlayerManaLabel" type="Label" parent="."]
-layout_mode = 0
-offset_left = 25.0
-offset_top = 360.0
-offset_right = 335.0
-offset_bottom = 385.0
-text = "77/77"
-
-[node name="AttackButton" type="Button" parent="."]
-layout_mode = 0
-offset_left = 25.0
-offset_top = 500.0
-offset_right = 335.0
-offset_bottom = 555.0
-text = "⚔ Attaque basique"
-
-[node name="CombatLog" type="RichTextLabel" parent="."]
-layout_mode = 0
-offset_left = 25.0
-offset_top = 565.0
-offset_right = 335.0
-offset_bottom = 630.0
-
-[node name="AttackCooldownTimer" type="Timer" parent="."]
-one_shot = true
-
-[node name="SkillsContainer" type="HBoxContainer" parent="."]
-layout_mode = 0
-offset_left = 28.0
-offset_top = 400.0
-offset_right = 334.0
-offset_bottom = 496.0
+[node name="RetryButton" type="Button" parent="ResultOverlay/Center/ResultPanel/Box/Buttons"]
+custom_minimum_size = Vector2(0, 46)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Rejouer"

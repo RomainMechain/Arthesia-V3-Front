@@ -310,7 +310,8 @@ func open_combat(entry: Dictionary) -> void:
 
 	combat_screen.prepare_combat(
 		zone_data.get("id", ""),
-		entry
+		entry,
+		loaded_templates.get(entry.get("template_id", ""), {})
 	)
 
 	combat_screen.back_requested.connect(

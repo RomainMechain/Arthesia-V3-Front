@@ -9,6 +9,10 @@ var is_connected := false
 
 
 func connect_to_combat() -> void:
+	# Une seule connexion à la fois : l'ancienne est fermée proprement.
+	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		socket.close(1000, "Nouvelle connexion")
+
 	socket = WebSocketPeer.new()
 	is_connected = false
 	
@@ -97,3 +101,7 @@ func use_skill(skill_id: String) -> void:
 
 	socket.send_text(JSON.stringify(message))
 	print("Compétence envoyée : ", skill_id)
+
+
+func is_open() -> bool:
+	return socket.get_ready_state() == WebSocketPeer.STATE_OPEN

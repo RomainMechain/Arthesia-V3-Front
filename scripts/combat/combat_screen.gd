@@ -1,339 +1,543 @@
 extends Control
 
+# Écran de combat temps réel contre un monstre d'une zone.
+#
+# Le serveur décide de tout (dégâts, mana, recharges) et envoie des événements
+# via CombatClient. Le client se contente d'afficher, d'animer la
+# régénération de mana entre deux événements et de bloquer les boutons
+# pendant les recharges indiquées par le serveur.
+
 signal back_requested
 
-@onready var back_button: Button = $BackButton
-@onready var monster_name: Label = $MonsterName
-@onready var monster_hp: ProgressBar = $MonsterHP
-@onready var monster_hp_label: Label = $MonsterHPLabel
-@onready var player_hp: ProgressBar = $PlayerHP
-@onready var player_hp_label: Label = $PlayerHPLabel
-@onready var player_mana: ProgressBar = $PlayerMana
-@onready var player_mana_label: Label = $PlayerManaLabel
-@onready var attack_button: Button = $AttackButton
-@onready var combat_log: RichTextLabel = $CombatLog
-@onready var attack_cooldown_timer: Timer = $AttackCooldownTimer
-@onready var skills_container: HBoxContainer = $SkillsContainer
+const COLOR_MUTED := UiStyle.COLOR_MUTED
+const COLOR_BONUS := UiStyle.COLOR_BONUS
+const COLOR_HIGHLIGHT := UiStyle.COLOR_HIGHLIGHT
+const COLOR_ERROR := UiStyle.COLOR_ERROR
+const COLOR_DAMAGE_DEALT := Color(1.0, 0.85, 0.4)
+const COLOR_DAMAGE_TAKEN := Color(1.0, 0.45, 0.4)
 
-var selected_entry: Dictionary = {}
+const ROLE_LABELS := {
+	"elite": "⭐ Élite",
+	"boss": "👑 Boss",
+}
+
+const MAX_LOG_LINES := 60
+
+@onready var flee_button: Button = $Layout/Header/FleeButton
+@onready var status_label: Label = $Layout/Header/StatusLabel
+@onready var monster_card: PanelContainer = $Layout/MonsterCard
+@onready var monster_name: Label = $Layout/MonsterCard/Box/MonsterName
+@onready var monster_level: Label = $Layout/MonsterCard/Box/MonsterLevel
+@onready var monster_hp: ProgressBar = $Layout/MonsterCard/Box/MonsterHP
+@onready var monster_hp_label: Label = $Layout/MonsterCard/Box/MonsterHPLabel
+@onready var player_card: PanelContainer = $Layout/PlayerCard
+@onready var player_name: Label = $Layout/PlayerCard/Box/PlayerName
+@onready var player_hp: ProgressBar = $Layout/PlayerCard/Box/PlayerHP
+@onready var player_hp_label: Label = $Layout/PlayerCard/Box/PlayerHPLabel
+@onready var player_mana: ProgressBar = $Layout/PlayerCard/Box/PlayerMana
+@onready var player_mana_label: Label = $Layout/PlayerCard/Box/PlayerManaLabel
+@onready var log_card: PanelContainer = $Layout/LogCard
+@onready var combat_log: RichTextLabel = $Layout/LogCard/CombatLog
+@onready var attack_button: Button = $Layout/AttackButton
+@onready var attack_cooldown: ProgressBar = $Layout/AttackCooldown
+@onready var skills_grid: GridContainer = $Layout/SkillsGrid
+@onready var result_overlay: ColorRect = $ResultOverlay
+@onready var result_panel: PanelContainer = $ResultOverlay/Center/ResultPanel
+@onready var result_title: Label = $ResultOverlay/Center/ResultPanel/Box/ResultTitle
+@onready var result_details: VBoxContainer = $ResultOverlay/Center/ResultPanel/Box/ResultDetails
+@onready var leave_button: Button = $ResultOverlay/Center/ResultPanel/Box/Buttons/LeaveButton
+@onready var retry_button: Button = $ResultOverlay/Center/ResultPanel/Box/Buttons/RetryButton
+
 var selected_zone_id := ""
+var selected_entry: Dictionary = {}
+var monster_template: Dictionary = {}
+
+var in_combat := false
 var combat_finished := false
-var equipped_skills: Array = []
-var skill_buttons: Dictionary = {}
 
-func setup_combat(data: Dictionary) -> void:
-	monster_name.text = data.get("monster_name", "Monstre")
+# Valeur affichée du mana : animée localement par la régénération, puis
+# recalée sur la valeur exacte à chaque événement du serveur.
+var mana_current := 0.0
+var mana_regen := 0.0
 
-	var monster_max_hp: float = float(data.get("monster_hp", 1))
-	var player_max_hp: float = float(data.get("player_hp", 1))
-	var player_max_mana: float = float(data.get("player_mana", 1))
+# Recharges en millisecondes (Time.get_ticks_msec).
+var attack_ready_at := 0
+var attack_cooldown_ms := 1
+var skill_ready_at: Dictionary = {}
 
-	monster_hp.max_value = monster_max_hp
-	monster_hp.value = monster_max_hp
-	monster_hp_label.text = "%d / %d PV" % [
-		int(monster_max_hp),
-		int(monster_max_hp)
-	]
+# skill_id -> {button, template}, dans l'ordre des compétences équipées.
+var skill_slots: Dictionary = {}
+var log_lines := 0
 
-	player_hp.max_value = player_max_hp
-	player_hp.value = player_max_hp
-	player_hp_label.text = "%d / %d PV" % [
-		int(player_max_hp),
-		int(player_max_hp)
-	]
 
-	player_mana.max_value = player_max_mana
-	player_mana.value = player_max_mana
-	player_mana_label.text = "%d / %d Mana" % [
-		int(player_max_mana),
-		int(player_max_mana)
-	]
+func _ready() -> void:
+	for card in [monster_card, player_card, log_card]:
+		card.add_theme_stylebox_override("panel", UiStyle.card_style())
 
-	combat_log.clear()
-	combat_log.add_text("Le combat commence !\n")
+	result_panel.add_theme_stylebox_override("panel", UiStyle.card_style(Color(0.13, 0.13, 0.15)))
 
-func prepare_combat(
-	zone_id: String,
-	entry: Dictionary
-) -> void:
+	UiStyle.style_bar(monster_hp, UiStyle.COLOR_ENEMY_HP)
+	UiStyle.style_bar(player_hp, UiStyle.COLOR_HP)
+	UiStyle.style_bar(player_mana, UiStyle.COLOR_MANA)
+	UiStyle.style_bar(attack_cooldown, COLOR_HIGHLIGHT)
+
+	monster_level.add_theme_color_override("font_color", COLOR_MUTED)
+	status_label.add_theme_color_override("font_color", COLOR_MUTED)
+
+	flee_button.pressed.connect(_on_flee_pressed)
+	attack_button.pressed.connect(_on_attack_pressed)
+	leave_button.pressed.connect(_on_leave_pressed)
+	retry_button.pressed.connect(_on_retry_pressed)
+
+	CombatClient.connected.connect(_on_combat_connected)
+	CombatClient.disconnected.connect(_on_combat_disconnected)
+	CombatClient.message_received.connect(_on_combat_message)
+
+
+# Appelé par l'écran de zone. monster_data est le template du monstre s'il
+# est déjà chargé ; sinon il est demandé au serveur.
+func prepare_combat(zone_id: String, entry: Dictionary, monster_data: Dictionary = {}) -> void:
 	selected_zone_id = zone_id
 	selected_entry = entry
+	monster_template = monster_data
 
-	equipped_skills = GameState.player.get("skills", {}).get("equipped_active", []).duplicate()
-	
-	build_skill_buttons()
+	player_name.text = "Toi · Niveau %d" % int(GameState.player.get("level", 1))
 
-	print("Combat préparé :")
-	print("Zone : ", selected_zone_id)
-	print("Entry : ", selected_entry.get("id", ""))
-	print("Compétences équipées en combat : ", equipped_skills)
+	if monster_template.is_empty():
+		var res := await ApiClient.get_template("monster", entry.get("template_id", ""))
+
+		if res.ok:
+			monster_template = res.data
+
+	show_monster_header()
+	await build_skill_buttons()
 
 	CombatClient.connect_to_combat()
 
-func _on_combat_connected() -> void:
-	CombatClient.start_combat(
-		GameState.player_id,
-		selected_zone_id,
-		selected_entry.get("id", "")
+
+func show_monster_header() -> void:
+	monster_name.text = monster_template.get("name", selected_entry.get("template_id", "Monstre"))
+
+	var level_text := "Niv. %d" % int(monster_template.get("level", 1))
+	var role: String = monster_template.get("role", "normal")
+
+	if ROLE_LABELS.has(role):
+		level_text = ROLE_LABELS[role] + " · " + level_text
+
+	monster_level.text = level_text
+
+
+# --- Compétences ----------------------------------------------------------
+
+func build_skill_buttons() -> void:
+	for child in skills_grid.get_children():
+		child.queue_free()
+
+	skill_slots.clear()
+
+	var equipped: Array = GameState.player.get("skills", {}).get("equipped_active", [])
+
+	for skill_id in equipped:
+		var res := await ApiClient.get_template("skill", skill_id)
+		var template: Dictionary = res.data if res.ok else {}
+
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(0, 52)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.clip_text = true
+		button.add_theme_font_size_override("font_size", 13)
+		button.disabled = true
+		button.pressed.connect(func(): _on_skill_pressed(skill_id))
+		skills_grid.add_child(button)
+
+		skill_slots[skill_id] = {"button": button, "template": template}
+
+
+func skill_display_name(skill_id: String) -> String:
+	return skill_slots.get(skill_id, {}).get("template", {}).get("name", prettify_id(skill_id))
+
+
+func skill_mana_cost(skill_id: String) -> float:
+	return float(skill_slots[skill_id].template.get("mana_cost", 0))
+
+
+func prettify_id(value: String) -> String:
+	var text := value.replace("_", " ")
+	return text.substr(0, 1).to_upper() + text.substr(1)
+
+
+# --- Mise à jour continue --------------------------------------------------
+
+func _process(delta: float) -> void:
+	if not in_combat:
+		return
+
+	if mana_current < player_mana.max_value:
+		mana_current = min(player_mana.max_value, mana_current + mana_regen * delta)
+		set_mana(mana_current)
+
+	var now := Time.get_ticks_msec()
+
+	var attack_left: int = max(0, attack_ready_at - now)
+	attack_button.disabled = attack_left > 0
+	attack_cooldown.value = 1.0 - float(attack_left) / float(attack_cooldown_ms)
+
+	if attack_left > 0:
+		attack_button.text = "⚔ Attaque  ·  %.1f s" % (attack_left / 1000.0)
+	else:
+		attack_button.text = "⚔ Attaque"
+
+	for skill_id in skill_slots:
+		update_skill_button(skill_id, now)
+
+
+func update_skill_button(skill_id: String, now: int) -> void:
+	var button: Button = skill_slots[skill_id].button
+	var cost := skill_mana_cost(skill_id)
+	var left: int = max(0, int(skill_ready_at.get(skill_id, 0)) - now)
+	var skill_name := skill_display_name(skill_id)
+
+	if left > 0:
+		button.text = "%s\n⏳ %.1f s" % [skill_name, left / 1000.0]
+	else:
+		button.text = "%s\n💧 %s mana" % [skill_name, format_number(cost)]
+
+	button.disabled = left > 0 or mana_current < cost
+
+
+func set_monster_hp(current: float, maximum: float) -> void:
+	monster_hp.max_value = max(maximum, 1.0)
+	monster_hp.value = current
+	monster_hp_label.text = "%s / %s PV" % [format_number(current), format_number(maximum)]
+
+
+func set_player_hp(current: float, maximum: float) -> void:
+	player_hp.max_value = max(maximum, 1.0)
+	player_hp.value = current
+	player_hp_label.text = "%s / %s PV" % [format_number(current), format_number(maximum)]
+
+
+func set_mana(current: float) -> void:
+	mana_current = current
+	player_mana.value = current
+	player_mana_label.text = "%d / %d Mana" % [int(current), int(player_mana.max_value)]
+
+
+func format_number(value: float) -> String:
+	if is_equal_approx(value, roundf(value)):
+		return str(int(roundf(value)))
+
+	return "%.1f" % value
+
+
+# --- Journal et animations --------------------------------------------------
+
+func add_log(text: String, color = null) -> void:
+	if log_lines >= MAX_LOG_LINES:
+		combat_log.remove_paragraph(0)
+	else:
+		log_lines += 1
+
+	if color != null:
+		text = "[color=#%s]%s[/color]" % [color.to_html(false), text]
+
+	combat_log.append_text(text + "\n")
+
+
+# Fait monter et disparaître un nombre au-dessus d'une carte.
+func spawn_floating_text(text: String, color: Color, target: Control) -> void:
+	var label := Label.new()
+	label.text = text
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("font_size", 22)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", 6)
+	add_child(label)
+
+	var start := target.global_position - global_position + Vector2(
+		target.size.x * 0.5 - 30 + randf_range(-40, 40),
+		target.size.y * 0.3
 	)
+	label.position = start
+
+	var tween := create_tween().set_parallel()
+	tween.tween_property(label, "position:y", start.y - 45, 0.9).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 0.9).set_delay(0.3)
+	tween.chain().tween_callback(label.queue_free)
+
+
+func flash(card: Control, color: Color) -> void:
+	card.modulate = color
+	create_tween().tween_property(card, "modulate", Color.WHITE, 0.25)
+
+
+# --- Connexion et messages --------------------------------------------------
+
+func _on_combat_connected() -> void:
+	start_combat()
+
+
+func start_combat() -> void:
+	status_label.text = "Début du combat..."
+	CombatClient.start_combat(GameState.player_id, selected_zone_id, selected_entry.get("id", ""))
+
+
+func _on_combat_disconnected() -> void:
+	if combat_finished:
+		return
+
+	in_combat = false
+	status_label.text = "Connexion perdue"
+	show_result("Connexion perdue", COLOR_ERROR, ["Le serveur de combat ne répond plus."])
 
 
 func _on_combat_message(data: Dictionary) -> void:
-	var event_type: String = data.get("type", "")
-
-	print("CombatScreen reçoit : ", event_type)
-
-	if event_type == "combat_started":
-		setup_combat(data)
-		attack_button.disabled = false
-		for button in skills_container.get_children():
-			button.disabled = false
-		
-	elif event_type == "player_basic_attack":
-		var current_hp: float = float(data.get("monster_hp", 0))
-		var max_hp: float = float(data.get("monster_max_hp", 1))
-		var damage: float = float(data.get("final_damage", 0))
-
-		monster_hp.max_value = max_hp
-		monster_hp.value = current_hp
-
-		monster_hp_label.text = "%.1f / %.1f PV" % [
-			current_hp,
-			max_hp
-		]
-
-		combat_log.add_text(
-			"Tu attaques le monstre : -%.1f PV\n" % damage
-		)
-		
-		var cooldown: float = float(data.get("next_ready_in", 0.0))
-
-		if cooldown > 0.0:
-			attack_button.disabled = true
-			attack_button.text = "Attaque en recharge..."
-			attack_cooldown_timer.start(cooldown)
-
-	elif event_type == "player_skill_used":
-		var current_monster_hp: float = float(
-			data.get("monster_hp", monster_hp.value)
-		)
-		var max_monster_hp: float = float(
-			data.get("monster_max_hp", monster_hp.max_value)
-		)
-
-		monster_hp.max_value = max_monster_hp
-		monster_hp.value = current_monster_hp
-
-		monster_hp_label.text = "%.1f / %.1f PV" % [
-			current_monster_hp,
-			max_monster_hp
-		]
-		
-		# Mettre à jour les PV du joueur, notamment après un soin.
-		if data.has("player_hp"):
-			var current_hp: float = float(data["player_hp"])
-
-			player_hp.value = current_hp
-			player_hp_label.text = "%.1f / %.1f PV" % [
-				current_hp,
-				player_hp.max_value
-			]
-
-		# Afficher les effets réellement appliqués par le serveur.
-		var results: Array = data.get("results", [])
-
-		for result in results:
-			var effect_type: String = str(result.get("effect", ""))
-
-			match effect_type:
-				"heal":
-					var amount: float = float(result.get("amount", 0))
-					combat_log.add_text(
-						"💚 Soin : +%.1f PV\n" % amount
-					)
-
-				"damage":
-					var damage: float = float(result.get("final_damage", 0))
-					combat_log.add_text(
-						"⚔ Dégâts : %.1f\n" % damage
-					)
-
-		if data.has("player_mana"):
-			var current_mana: float = float(data["player_mana"])
-
-			player_mana.value = current_mana
-			player_mana_label.text = "%.1f / %.1f Mana" % [
-				current_mana,
-				player_mana.max_value
-			]
-			
-		var skill_id: String = str(data.get("skill_id", ""))
-		var cooldown: float = float(data.get("next_ready_in", 0.0))
-
-		start_skill_cooldown(skill_id, cooldown)
-
-	elif event_type == "monster_attack":
-		var current_hp: float = float(data.get("player_hp", 0))
-		var max_hp: float = float(data.get("player_max_hp", 1))
-		var damage: float = float(data.get("final_damage", 0))
-		var skill_id: String = data.get("skill_id", "")
-
-		update_player_hp(current_hp, max_hp)
-
-		combat_log.add_text(
-			"Le monstre utilise %s : -%.1f PV\n" % [
-				skill_id,
-				damage
-			]
-		)
-
-	elif event_type == "combat_won":
-		finish_combat(true)
-		show_victory_rewards(data)
-		GameState.refresh_player()
-
-	elif event_type == "combat_won_no_reward":
-		print("Victoire sans récompense : ", data)
-		finish_combat(true)
-
-	elif event_type == "combat_lost":
-		finish_combat(false)
-
-	elif event_type == "error":
-		print("Erreur complète du backend : ", data)
-
-		combat_log.add_text(
-			"⚠ %s\n" % str(data.get("message", "Erreur inconnue"))
-		)
+	match str(data.get("type", "")):
+		"combat_started":
+			on_combat_started(data)
+		"player_basic_attack":
+			on_player_basic_attack(data)
+		"player_skill_used":
+			on_player_skill_used(data)
+		"monster_attack":
+			on_monster_attack(data)
+		"combat_won":
+			finish_combat()
+			await show_victory(data)
+		"combat_won_no_reward":
+			finish_combat()
+			show_result(
+				"Victoire",
+				COLOR_HIGHLIGHT,
+				["Ce monstre venait d'être vaincu : pas de récompense cette fois.", str(data.get("reason", ""))]
+			)
+		"combat_lost":
+			finish_combat()
+			add_log("💀 Tu es à terre.", COLOR_ERROR)
+			show_result("Défaite", COLOR_ERROR, ["Tu t'es fait terrasser. Renforce-toi et reviens !"])
+		"error":
+			add_log("⚠ " + str(data.get("message", "Erreur inconnue")), COLOR_HIGHLIGHT)
 
 
-func _on_back_pressed() -> void:
-	CombatClient.disconnect_from_combat()
-	back_requested.emit()
-	
-func update_player_hp(current_hp: float, max_hp: float) -> void:
-	player_hp.max_value = max_hp
-	player_hp.value = current_hp
+func on_combat_started(data: Dictionary) -> void:
+	in_combat = true
+	combat_finished = false
+	result_overlay.visible = false
+	status_label.text = "En combat"
 
-	player_hp_label.text = "%.1f / %.1f PV" % [
-		current_hp,
-		max_hp
-	]
+	monster_name.text = str(data.get("monster_name", monster_name.text))
 
-func _on_attack_pressed() -> void:
-	if combat_finished:
-		return
+	var monster_max := float(data.get("monster_hp", 1))
+	set_monster_hp(monster_max, monster_max)
 
-	CombatClient.basic_attack()
-	
-func _on_attack_cooldown_finished() -> void:
-	if combat_finished:
-		return
+	var player_max := float(data.get("player_hp", 1))
+	set_player_hp(player_max, player_max)
 
-	attack_button.disabled = false
-	attack_button.text = "⚔ Attaque basique"
-	
-func finish_combat(victory: bool) -> void:
+	player_mana.max_value = max(float(data.get("player_mana", 1)), 1.0)
+	set_mana(float(data.get("player_mana", 0)))
+	mana_regen = float(data.get("player_mana_regen", 0))
+
+	attack_ready_at = 0
+	attack_cooldown_ms = int(float(data.get("basic_attack_cooldown", 1)) * 1000)
+	skill_ready_at.clear()
+
+	combat_log.clear()
+	log_lines = 0
+	add_log("Le combat contre %s commence !" % monster_name.text, COLOR_MUTED)
+
+
+func on_player_basic_attack(data: Dictionary) -> void:
+	var damage := float(data.get("final_damage", 0))
+
+	set_monster_hp(float(data.get("monster_hp", 0)), float(data.get("monster_max_hp", monster_hp.max_value)))
+	add_log("⚔ Tu frappes : %s dégâts" % format_number(damage))
+	spawn_floating_text("-" + format_number(damage), COLOR_DAMAGE_DEALT, monster_card)
+	flash(monster_card, Color(1.4, 0.8, 0.8))
+
+	var cooldown := float(data.get("next_ready_in", 0))
+	attack_cooldown_ms = max(int(cooldown * 1000), 1)
+	attack_ready_at = Time.get_ticks_msec() + attack_cooldown_ms
+
+
+func on_player_skill_used(data: Dictionary) -> void:
+	var skill_id := str(data.get("skill_id", ""))
+
+	set_monster_hp(float(data.get("monster_hp", monster_hp.value)), monster_hp.max_value)
+
+	# Le serveur plafonne les soins aux PV max mais renvoie la valeur brute :
+	# on affiche les PV réellement récupérés.
+	var hp_before := player_hp.value
+
+	if data.has("player_hp"):
+		set_player_hp(float(data["player_hp"]), player_hp.max_value)
+
+	if data.has("player_mana"):
+		set_mana(float(data["player_mana"]))
+
+	var details := PackedStringArray()
+
+	for result in data.get("results", []):
+		match str(result.get("effect", "")):
+			"damage":
+				var damage := float(result.get("final_damage", 0))
+				details.append("%s dégâts" % format_number(damage))
+				spawn_floating_text("-" + format_number(damage), COLOR_DAMAGE_DEALT, monster_card)
+				flash(monster_card, Color(1.4, 0.8, 0.8))
+			"heal":
+				var healed: float = max(0.0, player_hp.value - hp_before)
+				details.append("+%s PV" % format_number(healed) if healed > 0 else "PV déjà au maximum")
+
+				if healed > 0:
+					spawn_floating_text("+" + format_number(healed), COLOR_BONUS, player_card)
+
+	var line := "✨ %s" % skill_display_name(skill_id)
+
+	if not details.is_empty():
+		line += " : " + ", ".join(details)
+
+	add_log(line, Color(0.7, 0.8, 1.0))
+
+	skill_ready_at[skill_id] = Time.get_ticks_msec() + int(float(data.get("next_ready_in", 0)) * 1000)
+
+
+func on_monster_attack(data: Dictionary) -> void:
+	var damage := float(data.get("final_damage", 0))
+
+	set_player_hp(float(data.get("player_hp", 0)), float(data.get("player_max_hp", player_hp.max_value)))
+
+	if data.has("player_mana"):
+		set_mana(float(data["player_mana"]))
+
+	add_log(
+		"🩸 %s : %s dégâts subis" % [prettify_id(str(data.get("skill_id", "Attaque"))), format_number(damage)],
+		COLOR_DAMAGE_TAKEN
+	)
+	spawn_floating_text("-" + format_number(damage), COLOR_DAMAGE_TAKEN, player_card)
+	flash(player_card, Color(1.5, 0.7, 0.7))
+
+
+func finish_combat() -> void:
+	in_combat = false
 	combat_finished = true
-	for button in skills_container.get_children():
-		button.disabled = true
-
-	attack_cooldown_timer.stop()
+	status_label.text = "Combat terminé"
 	attack_button.disabled = true
+	attack_cooldown.value = 0
 
-	if victory:
-		attack_button.text = "🏆 Combat terminé"
-		combat_log.add_text("\n🏆 VICTOIRE !\n")
-	else:
-		attack_button.text = "💀 Combat terminé"
-		combat_log.add_text("\n💀 DÉFAITE !\n")
-		
-func show_victory_rewards(data: Dictionary) -> void:
-	var xp_gained: float = float(data.get("xp_gagne", 0))
-	var levels_gained: int = int(data.get("levels_gained", 0))
-	var player_level: int = int(data.get("player_level", 1))
+	for skill_id in skill_slots:
+		skill_slots[skill_id].button.disabled = true
 
-	combat_log.add_text("✨ +%d XP\n" % int(xp_gained))
 
-	var loot: Array = data.get("loot", [])
+# --- Fin de combat ---------------------------------------------------------
 
-	if loot.size() >= 2:
-		var item_id: String = str(loot[0])
-		var quantity: int = int(loot[1])
+func show_result(title: String, color: Color, lines: Array) -> void:
+	result_title.text = title
+	result_title.add_theme_color_override("font_color", color)
 
-		combat_log.add_text(
-			"🎁 Butin : %s x%d\n" % [item_id.replace("_", " ").capitalize(), quantity]
-		)
-
-	if levels_gained > 0:
-		combat_log.add_text(
-			"🌟 Niveau supérieur ! Niveau %d\n" % player_level
-		)
-		
-func build_skill_buttons() -> void:
-	skill_buttons.clear()
-
-	for child in skills_container.get_children():
+	for child in result_details.get_children():
 		child.queue_free()
 
-	for skill_id in equipped_skills:
-		var id: String = str(skill_id)
+	for line in lines:
+		if str(line).is_empty():
+			continue
 
-		var button := Button.new()
-		button.text = id.replace("_", " ").capitalize()
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.disabled = true
+		var label := Label.new()
+		label.text = str(line)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		result_details.add_child(label)
 
-		button.pressed.connect(
-			func():
-				if not combat_finished:
-					CombatClient.use_skill(id)
-		)
+	result_overlay.visible = true
 
-		skills_container.add_child(button)
-		skill_buttons[id] = button
 
-func start_skill_cooldown(skill_id: String, duration: float) -> void:
-	if not skill_buttons.has(skill_id):
-		return
+func show_victory(data: Dictionary) -> void:
+	add_log("🏆 Victoire !", COLOR_HIGHLIGHT)
 
-	if duration <= 0.0:
-		return
+	var lines: Array = ["✨ +%d XP" % int(data.get("xp_gagne", 0))]
 
-	var button: Button = skill_buttons[skill_id]
-	var original_text: String = skill_id.replace("_", " ").capitalize()
+	var loot = data.get("loot")
 
-	button.disabled = true
+	if loot is Array and loot.size() >= 2:
+		var res := await ApiClient.get_template("item", str(loot[0]))
+		var loot_name: String = res.data.get("name", str(loot[0])) if res.ok else prettify_id(str(loot[0]))
+		lines.append("🎁 %s ×%d" % [loot_name, int(loot[1])])
+	else:
+		lines.append("Pas de butin cette fois.")
 
-	var timer := Timer.new()
-	timer.one_shot = true
-	timer.wait_time = duration
-	button.add_child(timer)
+	if int(data.get("levels_gained", 0)) > 0:
+		lines.append("🌟 Niveau %d atteint !" % int(data.get("player_level", 1)))
 
-	timer.timeout.connect(
-		func():
-			if not combat_finished:
-				button.disabled = false
-				button.text = original_text
+	for unlock in data.get("newly_unlocked", []):
+		lines.append(await describe_unlock(str(unlock)))
 
-			timer.queue_free()
-	)
+	show_result("Victoire !", COLOR_HIGHLIGHT, lines)
 
-	timer.start()
+	# Recharge le joueur : la carte et l'écran Personnage se mettent à jour.
+	GameState.refresh_player()
 
-func _process(_delta: float) -> void:
-	for skill_id in skill_buttons:
-		var button: Button = skill_buttons[skill_id]
 
-		for child in button.get_children():
-			if child is Timer and not child.is_stopped():
-				button.text = "⏳ %.1f s" % child.time_left
+# Les déblocages arrivent sous la forme "zone:<id>", "skill:<id>", "title:<id>".
+func describe_unlock(unlock: String) -> String:
+	var parts := unlock.split(":", true, 1)
 
-func _ready() -> void:
-	back_button.pressed.connect(_on_back_pressed)
+	if parts.size() < 2:
+		return "🔓 " + unlock
 
-	CombatClient.connected.connect(_on_combat_connected)
-	CombatClient.message_received.connect(_on_combat_message)
-	attack_button.pressed.connect(_on_attack_pressed)
-	attack_cooldown_timer.timeout.connect(_on_attack_cooldown_finished)
-	attack_button.disabled = true
+	var kind := parts[0]
+	var id := parts[1]
+
+	match kind:
+		"zone":
+			var res := await ApiClient.list_zones()
+
+			if res.ok:
+				for zone in res.data:
+					if zone.get("id", "") == id:
+						return "🗺 Nouvelle zone : " + str(zone.get("name", id))
+
+			return "🗺 Nouvelle zone : " + prettify_id(id)
+		"skill", "title":
+			var res := await ApiClient.get_template(kind, id)
+			var label := "📖 Nouveau talent : " if kind == "skill" else "🏅 Nouveau titre : "
+			return label + (str(res.data.get("name", id)) if res.ok else prettify_id(id))
+		_:
+			return "🔓 " + unlock
+
+
+# --- Boutons -----------------------------------------------------------------
+
+func _on_attack_pressed() -> void:
+	if in_combat:
+		CombatClient.basic_attack()
+
+
+func _on_skill_pressed(skill_id: String) -> void:
+	if in_combat:
+		CombatClient.use_skill(skill_id)
+
+
+func _on_flee_pressed() -> void:
+	CombatClient.disconnect_from_combat()
+	back_requested.emit()
+
+
+func _on_leave_pressed() -> void:
+	CombatClient.disconnect_from_combat()
+	back_requested.emit()
+
+
+func _on_retry_pressed() -> void:
+	result_overlay.visible = false
+	combat_finished = false
+	status_label.text = "Connexion..."
+
+	# Les compétences équipées ont pu changer depuis le début du combat.
+	player_name.text = "Toi · Niveau %d" % int(GameState.player.get("level", 1))
+	await build_skill_buttons()
+
+	# La connexion reste ouverte après une victoire ou une défaite : on peut
+	# relancer directement un combat dessus.
+	if CombatClient.is_open():
+		start_combat()
+	else:
+		CombatClient.connect_to_combat()
