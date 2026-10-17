@@ -4,9 +4,15 @@ extends Control
 @onready var floor_title: Label = $FloorTitle
 @onready var map_viewport: Control = $MapViewport
 @onready var map_container: Control = $MapViewport/MapContainer
+@onready var character_button: Button = $CharacterButton
 
 const ZONE_NODE_SCENE := preload("res://scene/map/ZoneNode.tscn")
 const ZONE_SCREEN_SCENE := preload("res://scene/zone/ZoneScreen.tscn")
+const CHARACTER_SCREEN_SCENE := preload("res://scene/character/CharacterScreen.tscn")
+
+# Nombre d'écrans ouverts par-dessus la carte : tant qu'il y en a, la carte
+# ne doit pas défiler sous les gestes destinés à ces écrans.
+var open_overlays := 0
 var zone_positions: Dictionary = {}
 
 var is_dragging := false
@@ -22,6 +28,7 @@ const MAP_PADDING := 250.0
 var map_initialized := false
 
 func _ready() -> void:
+	character_button.pressed.connect(_on_character_button_pressed)
 	GameState.session_failed.connect(_on_session_failed)
 	GameState.player_changed.connect(_on_player_changed)
 
@@ -184,6 +191,9 @@ func create_connections(connections: Array) -> void:
 		map_container.move_child(line, 0)
 
 func _input(event: InputEvent) -> void:
+	if open_overlays > 0:
+		return
+
 	# --- Souris ---
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -286,11 +296,28 @@ func _on_zone_selected(zone: Dictionary) -> void:
 
 	var zone_screen = ZONE_SCREEN_SCENE.instantiate()
 
-	add_child(zone_screen)
-
+	open_overlay(zone_screen)
 	zone_screen.setup(zone)
 
-	zone_screen.back_requested.connect(
+
+func _on_character_button_pressed() -> void:
+	if not GameState.is_ready:
+		return
+
+	open_overlay(CHARACTER_SCREEN_SCENE.instantiate())
+
+
+# Affiche un écran plein cadre par-dessus la carte. L'écran doit émettre
+# back_requested pour se fermer.
+func open_overlay(screen: Control) -> void:
+	add_child(screen)
+	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	open_overlays += 1
+	is_dragging = false
+
+	screen.back_requested.connect(
 		func():
-			zone_screen.queue_free()
+			open_overlays -= 1
+			screen.queue_free()
 	)

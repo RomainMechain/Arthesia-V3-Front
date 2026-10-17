@@ -52,6 +52,17 @@ func start_session() -> void:
 	session_ready.emit()
 
 
+# Exécute une action pour le joueur courant puis recharge son état, ce qui
+# met à jour tous les écrans abonnés à player_changed.
+func perform_action(action: String, body: Dictionary = {}) -> Dictionary:
+	var res := await ApiClient.post_action(player_id, action, body)
+
+	if res.ok:
+		await refresh_player()
+
+	return res
+
+
 func refresh_player() -> void:
 	var res := await ApiClient.get_player(player_id)
 

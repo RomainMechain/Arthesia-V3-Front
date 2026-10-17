@@ -136,3 +136,15 @@ func get_player(player_id: String) -> Dictionary:
 
 func create_player(player_id: String) -> Dictionary:
 	return await post_json("/players", {"player_id": player_id})
+
+
+# Statistiques finales, seuil d'XP du niveau courant et gain par point de stat.
+func get_player_stats(player_id: String) -> Dictionary:
+	return await get_json("/players/%s/stats" % player_id)
+
+
+# Envoie une action de jeu (POST /actions/<action>) au nom d'un joueur.
+func post_action(player_id: String, action: String, body: Dictionary = {}) -> Dictionary:
+	var payload := body.duplicate()
+	payload["player_id"] = player_id
+	return await post_json("/actions/" + action, payload)
