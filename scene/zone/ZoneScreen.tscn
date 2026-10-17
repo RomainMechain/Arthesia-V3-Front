@@ -1,12 +1,6 @@
-[gd_scene load_steps=4 format=3 uid="uid://dpk8acjfdi6qm"]
+[gd_scene load_steps=2 format=3 uid="uid://dpk8acjfdi6qm"]
 
 [ext_resource type="Script" uid="uid://4f322ldg0krt" path="res://scripts/zone/zone_screen.gd" id="1_vyen1"]
-
-[sub_resource type="LabelSettings" id="LabelSettings_ffvdf"]
-font_size = 26
-
-[sub_resource type="LabelSettings" id="LabelSettings_vyen1"]
-font_size = 13
 
 [node name="ZoneScreen" type="Control"]
 layout_mode = 3
@@ -26,52 +20,42 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.10747976, 0.10747973, 0.10747973, 1)
 
-[node name="BackButton" type="Button" parent="."]
-layout_mode = 0
-offset_left = 15.0
-offset_top = 20.0
-offset_right = 134.0
-offset_bottom = 60.0
-text = "← Retour"
-
-[node name="Scroll" type="ScrollContainer" parent="."]
+[node name="Layout" type="VBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 25.0
-offset_top = 76.0
-offset_right = -25.0
+offset_left = 16.0
+offset_top = 20.0
+offset_right = -16.0
 offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 2
-horizontal_scroll_mode = 0
-
-[node name="Body" type="VBoxContainer" parent="Scroll"]
-layout_mode = 2
-size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
-[node name="ZoneTitle" type="Label" parent="Scroll/Body"]
+[node name="Header" type="HBoxContainer" parent="Layout"]
 layout_mode = 2
-text = "Nom de la zone"
-label_settings = SubResource("LabelSettings_ffvdf")
-horizontal_alignment = 1
-autowrap_mode = 3
+theme_override_constants/separation = 10
 
-[node name="ZoneDescription" type="Label" parent="Scroll/Body"]
+[node name="BackButton" type="Button" parent="Layout/Header"]
+custom_minimum_size = Vector2(44, 40)
 layout_mode = 2
-text = "Description de la zone..."
-label_settings = SubResource("LabelSettings_vyen1")
-autowrap_mode = 3
+text = "←"
 
-[node name="CategoriesContainer" type="VBoxContainer" parent="Scroll/Body"]
+[node name="Title" type="Label" parent="Layout/Header"]
 layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 22
+text = "Zone"
+vertical_alignment = 1
+text_overrun_behavior = 3
 
-[node name="EntriesContainer" type="VBoxContainer" parent="Scroll/Body"]
-visible = false
+[node name="Scroll" type="ScrollContainer" parent="Layout"]
 layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
-[node name="EntryDetailContainer" type="VBoxContainer" parent="Scroll/Body"]
-visible = false
+[node name="Body" type="VBoxContainer" parent="Layout/Scroll"]
 layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10

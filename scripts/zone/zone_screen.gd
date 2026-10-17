@@ -1,78 +1,253 @@
 extends Control
 
+# Écran d'une zone, en deux pages construites en code dans Body :
+#
+# * la liste : description, filtres par catégorie, une carte par entry
+#   (nom, sous-titre selon le type, disponibilité) ;
+# * la fiche d'une entry : contenu propre à chaque type (monstre, ressource,
+#   habitant, quête, commerce).
+#
+# Le bouton retour du haut ramène de la fiche à la liste, puis à la carte.
 
 signal back_requested
-
-@onready var back_button: Button = $BackButton
-@onready var zone_title: Label = $Scroll/Body/ZoneTitle
-@onready var zone_description: Label = $Scroll/Body/ZoneDescription
-@onready var scroll: ScrollContainer = $Scroll
-@onready var categories_container: VBoxContainer = $Scroll/Body/CategoriesContainer
-@onready var entries_container: VBoxContainer = $Scroll/Body/EntriesContainer
-@onready var entry_detail_container: VBoxContainer = $Scroll/Body/EntryDetailContainer
+signal _load_finished
 
 const COMBAT_SCREEN_SCENE := preload("res://scene/combat/CombatScreen.tscn")
 const RESOURCE_PANEL_SCRIPT := preload("res://scripts/zone/resource_panel.gd")
+
+const COLOR_MUTED := UiStyle.COLOR_MUTED
+const COLOR_BONUS := UiStyle.COLOR_BONUS
+const COLOR_HIGHLIGHT := UiStyle.COLOR_HIGHLIGHT
+const COLOR_ERROR := UiStyle.COLOR_ERROR
+const COLOR_DANGER := Color(0.95, 0.55, 0.45)
 
 # Ordre d'affichage des catégories. Plusieurs template_type peuvent partager
 # une catégorie (boutique PNJ et Autel des Ventes sont tous deux du commerce).
 const CATEGORY_ORDER := ["combat", "resources", "npcs", "quests", "commerce", "exploration"]
 
+const CATEGORY_NAMES := {
+	"combat": "Combat",
+	"resources": "Ressources",
+	"npcs": "Habitants",
+	"quests": "Quêtes",
+	"commerce": "Commerce",
+	"exploration": "Exploration",
+}
+
+const CATEGORY_ICONS := {
+	"combat": "⚔",
+	"resources": "🌿",
+	"npcs": "👤",
+	"quests": "📜",
+	"commerce": "🛒",
+	"exploration": "🔎",
+}
+
+const ROLE_LABELS := {
+	"elite": "⭐ Élite",
+	"boss": "👑 Boss",
+}
+
+const STAT_ORDER := ["hp", "atk", "def", "agi", "int", "sag"]
+const STAT_LABELS := {"hp": "PV", "atk": "ATK", "def": "DEF", "agi": "AGI", "int": "INT", "sag": "SAG"}
+
+@onready var back_button: Button = $Layout/Header/BackButton
+@onready var title_label: Label = $Layout/Header/Title
+@onready var scroll: ScrollContainer = $Layout/Scroll
+@onready var body: VBoxContainer = $Layout/Scroll/Body
+
 var zone_data: Dictionary = {}
 var loaded_templates: Dictionary = {}
+var item_names: Dictionary = {}
 
-# Incrémenté à chaque ouverture de catégorie : un chargement de templates
-# encore en cours pour une ancienne catégorie ne doit pas écraser la liste.
-var category_request_id := 0
+# Disponibilité des entries partagées (GET /zones/{id}/state), et instant de
+# réception pour faire défiler les comptes à rebours.
+var entry_states: Dictionary = {}
+var states_received_msec := 0
+
+var current_filter := "all"
+var current_entry: Dictionary = {}
+var list_scroll := 0
+
+# Sous-titres des cartes de la liste à rafraîchir pendant les comptes à rebours.
+var status_labels: Dictionary = {}
+var status_timer := 0.0
+var is_refreshing_state := false
+
+# Incrémenté à chaque changement de page : un chargement terminé après coup
+# ne doit pas reconstruire une page qui n'est plus affichée.
+var page_id := 0
 
 
 func _ready() -> void:
-	back_button.pressed.connect(_on_back_button_pressed)
+	back_button.pressed.connect(_on_back_pressed)
 
 
 func setup(data: Dictionary) -> void:
 	zone_data = data
+	title_label.text = data.get("name", "Zone")
 
-	zone_title.text = data.get("name", "Zone")
-	zone_description.text = data.get(
-		"description",
-		"Aucune description disponible."
-	)
+	clear_body()
+	add_label(data.get("description", ""), 13, COLOR_MUTED)
+	add_label("Chargement de la zone...", 14, COLOR_MUTED)
 
 	var zone_id: String = data.get("id", "")
-
-	if zone_id.is_empty():
-		return
-
 	var res := await ApiClient.get_zone(zone_id)
 
 	if not res.ok:
+		clear_body()
+		add_label(data.get("description", ""), 13, COLOR_MUTED)
+
 		if res.status == 404:
-			show_message("Cette zone n'a pas encore de contenu.")
+			add_label("Cette zone n'a pas encore de contenu.", 15, COLOR_MUTED)
 		else:
-			show_message("Impossible de charger la zone : " + res.error)
+			add_label("Impossible de charger la zone : " + res.error, 14, COLOR_ERROR)
 		return
 
 	zone_data = res.data
-	zone_title.text = zone_data.get("name", "Zone")
-	zone_description.text = zone_data.get(
-		"description",
-		"Aucune description disponible."
-	)
+	title_label.text = zone_data.get("name", "Zone")
 
-	build_categories(zone_data.get("entries", []))
+	# Templates et disponibilité sont chargés en parallèle.
+	var counter := {"pending": 1}
+	_refresh_states_counted(counter)
+	await load_templates(zone_data.get("entries", []), counter)
 
-
-func _on_back_button_pressed() -> void:
-	back_requested.emit()
+	show_list()
 
 
-func show_message(text: String) -> void:
+# --- Chargements --------------------------------------------------------------
+
+# Lance toutes les requêtes de templates en même temps et attend la dernière.
+# counter peut déjà compter d'autres requêtes lancées en parallèle.
+func load_templates(entries: Array, counter := {"pending": 0}) -> void:
+	var requested := {}
+
+	for entry in entries:
+		var template_id: String = entry.get("template_id", "")
+
+		if template_id.is_empty() or loaded_templates.has(template_id) or requested.has(template_id):
+			continue
+
+		requested[template_id] = true
+		counter.pending += 1
+		_load_template(entry, counter)
+
+	while counter.pending > 0:
+		await _load_finished
+
+
+func _load_template(entry: Dictionary, counter: Dictionary) -> void:
+	var res := await ApiClient.get_template(ApiClient.template_kind_for_entry(entry), entry.get("template_id", ""))
+
+	if res.ok:
+		loaded_templates[entry.get("template_id", "")] = res.data
+
+	counter.pending -= 1
+	_load_finished.emit()
+
+
+func _refresh_states_counted(counter: Dictionary) -> void:
+	await refresh_states()
+	counter.pending -= 1
+	_load_finished.emit()
+
+
+func load_item_names(item_ids: Array) -> void:
+	var counter := {"pending": 0}
+
+	for item_id in item_ids:
+		if item_names.has(item_id):
+			continue
+
+		item_names[item_id] = GameText.prettify_id(item_id)
+		counter.pending += 1
+		_load_item_name(item_id, counter)
+
+	while counter.pending > 0:
+		await _load_finished
+
+
+func _load_item_name(item_id: String, counter: Dictionary) -> void:
+	var res := await ApiClient.get_template("item", item_id)
+
+	if res.ok:
+		item_names[item_id] = res.data.get("name", item_id)
+
+	counter.pending -= 1
+	_load_finished.emit()
+
+
+func refresh_states() -> void:
+	is_refreshing_state = true
+	var res := await ApiClient.get_json("/zones/%s/state" % zone_data.get("id", ""))
+	is_refreshing_state = false
+
+	if res.ok:
+		entry_states = res.data.get("entries", {})
+		states_received_msec = Time.get_ticks_msec()
+
+
+func template_of(entry: Dictionary) -> Dictionary:
+	return loaded_templates.get(entry.get("template_id", ""), {})
+
+
+# --- Outils d'affichage -------------------------------------------------------
+
+func clear_body() -> void:
+	status_labels.clear()
+
+	for child in body.get_children():
+		child.queue_free()
+
+
+func make_label(text: String, font_size := 0, color = null, wrap := true) -> Label:
 	var label := Label.new()
 	label.text = text
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	categories_container.add_child(label)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	if wrap:
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	if font_size > 0:
+		label.add_theme_font_size_override("font_size", font_size)
+
+	if color != null:
+		label.add_theme_color_override("font_color", color)
+
+	return label
+
+
+func add_label(text: String, font_size := 0, color = null) -> Label:
+	var label := make_label(text, font_size, color)
+	body.add_child(label)
+	return label
+
+
+func add_section_title(text: String) -> void:
+	add_label(text, 17)
+
+
+func add_card(lines: Array) -> PanelContainer:
+	var card := UiStyle.make_card()
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 3)
+	card.add_child(box)
+
+	for line in lines:
+		box.add_child(line)
+
+	body.add_child(card)
+	return card
+
+
+# Fondu et léger glissement à l'arrivée d'une page.
+func animate_page(from_right: bool) -> void:
+	body.modulate.a = 0.0
+	body.position.x = 24.0 if from_right else -24.0
+
+	var tween := create_tween().set_parallel().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(body, "modulate:a", 1.0, 0.18)
+	tween.tween_property(body, "position:x", 0.0, 0.18)
 
 
 func get_category(template_type: String) -> String:
@@ -93,225 +268,590 @@ func get_category(template_type: String) -> String:
 			return template_type
 
 
-func get_category_name(category: String) -> String:
-	match category:
-		"combat":
-			return "⚔ Combat"
-		"resources":
-			return "🌿 Ressources"
-		"npcs":
-			return "👤 Habitants"
-		"quests":
-			return "📜 Quêtes"
-		"commerce":
-			return "🛒 Commerce"
-		"exploration":
-			return "🔎 Exploration"
+func category_label(category: String) -> String:
+	return "%s %s" % [CATEGORY_ICONS.get(category, "•"), CATEGORY_NAMES.get(category, category)]
+
+
+# --- Disponibilité ------------------------------------------------------------
+
+# Secondes restantes avant réapparition, d'après le dernier état reçu.
+func seconds_left(entry_id: String) -> float:
+	var state: Dictionary = entry_states.get(entry_id, {})
+	var elapsed := (Time.get_ticks_msec() - states_received_msec) / 1000.0
+	return max(0.0, float(state.get("seconds_until_available", 0)) - elapsed)
+
+
+func is_entry_available(entry: Dictionary) -> bool:
+	var state: Dictionary = entry_states.get(entry.get("id", ""), {})
+	return state.get("status", "available") == "available"
+
+
+# [texte, couleur] de disponibilité, texte vide pour une entry toujours présente.
+func availability(entry: Dictionary) -> Array:
+	var entry_id: String = entry.get("id", "")
+	var state: Dictionary = entry_states.get(entry_id, {})
+	var status: String = state.get("status", "available")
+
+	match status:
+		"available":
+			if state.has("max_stock"):
+				return ["stock %d/%d" % [int(state.get("current_stock", 0)), int(state["max_stock"])], COLOR_BONUS]
+			return ["", null]
+		"defeated":
+			return ["💀 Vaincu", COLOR_MUTED]
+		"depleted":
+			var left := seconds_left(entry_id)
+			if left <= 0:
+				return ["revient...", COLOR_HIGHLIGHT]
+			return ["⏳ %d s" % ceili(left), COLOR_HIGHLIGHT]
 		_:
-			return category
+			return ["Indisponible", COLOR_MUTED]
 
 
-func build_categories(entries: Array) -> void:
-	var category_counts: Dictionary = {}
+func _process(delta: float) -> void:
+	if status_labels.is_empty():
+		return
+
+	status_timer += delta
+
+	if status_timer < 0.5:
+		return
+
+	status_timer = 0.0
+	var needs_refresh := false
+
+	for entry_id in status_labels:
+		var label: Label = status_labels[entry_id].label
+		var info := availability(status_labels[entry_id].entry)
+		label.text = info[0]
+
+		if info[1] != null:
+			label.add_theme_color_override("font_color", info[1])
+
+		var state: Dictionary = entry_states.get(entry_id, {})
+
+		if state.get("status", "") == "depleted" and seconds_left(entry_id) <= 0:
+			needs_refresh = true
+
+	# Une entry vient de réapparaître : on redemande l'état exact.
+	if needs_refresh and not is_refreshing_state:
+		await refresh_states()
+
+		if current_entry.is_empty():
+			show_list(false)
+
+
+# --- Page liste ---------------------------------------------------------------
+
+func show_list(animate := true) -> void:
+	page_id += 1
+	current_entry = {}
+	clear_body()
+
+	add_label(zone_data.get("description", ""), 13, COLOR_MUTED)
+
+	var entries: Array = zone_data.get("entries", [])
+
+	if entries.is_empty():
+		add_label("Rien à faire ici pour l'instant.", 14, COLOR_MUTED)
+		return
+
+	var groups: Dictionary = {}
 
 	for entry in entries:
-		var template_type: String = entry.get("template_type", "")
-		if template_type.is_empty():
-			continue
-		var category := get_category(template_type)
-		category_counts[category] = category_counts.get(category, 0) + 1
+		var category := get_category(entry.get("template_type", ""))
 
-	# Catégories connues dans l'ordre prévu, puis les éventuelles inconnues.
+		if not groups.has(category):
+			groups[category] = []
+
+		groups[category].append(entry)
+
 	var ordered: Array = []
 
 	for category in CATEGORY_ORDER:
-		if category_counts.has(category):
+		if groups.has(category):
 			ordered.append(category)
 
-	for category in category_counts:
+	for category in groups:
 		if not ordered.has(category):
 			ordered.append(category)
 
+	body.add_child(build_filters(ordered, groups))
+
 	for category in ordered:
-		var count: int = category_counts[category]
-		var button := Button.new()
-		button.text = "%s  (%d)" % [
-			get_category_name(category),
-			count
-		]
-		button.custom_minimum_size = Vector2(0, 55)
-		button.pressed.connect(
+		if current_filter != "all" and current_filter != category:
+			continue
+
+		if current_filter == "all":
+			add_section_title(category_label(category))
+
+		for entry in groups[category]:
+			body.add_child(build_entry_card(entry, category))
+
+	if animate:
+		animate_page(false)
+
+	# Revient à la position de défilement de la liste après une fiche.
+	await get_tree().process_frame
+	scroll.scroll_vertical = list_scroll
+
+
+func build_filters(ordered: Array, groups: Dictionary) -> HFlowContainer:
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 6)
+	flow.add_theme_constant_override("v_separation", 6)
+
+	var filters: Array = [["all", "Tout"]]
+
+	for category in ordered:
+		filters.append([category, "%s %d" % [CATEGORY_ICONS.get(category, "•"), groups[category].size()]])
+
+	for filter in filters:
+		var chip := Button.new()
+		chip.text = filter[1]
+		chip.toggle_mode = true
+		chip.button_pressed = current_filter == filter[0]
+		chip.custom_minimum_size = Vector2(52, 36)
+		chip.add_theme_font_size_override("font_size", 14)
+		chip.tooltip_text = CATEGORY_NAMES.get(filter[0], "Tout")
+		chip.pressed.connect(
 			func():
-				open_category(category)
+				current_filter = filter[0]
+				list_scroll = 0
+				show_list(false)
 		)
-		categories_container.add_child(button)
+		flow.add_child(chip)
+
+	return flow
 
 
-func open_category(category: String) -> void:
-	var entries: Array = zone_data.get("entries", [])
-	var filtered_entries: Array = []
+func build_entry_card(entry: Dictionary, category: String) -> Button:
+	var template := template_of(entry)
+	var button := UiStyle.make_card_button()
+	button.pressed.connect(func(): open_entry_detail(entry))
 
-	for entry in entries:
-		if get_category(entry.get("template_type", "")) == category:
-			filtered_entries.append(entry)
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 12
+	row.offset_right = -12
+	row.add_theme_constant_override("separation", 12)
+	button.add_child(row)
 
-	category_request_id += 1
-	var request_id := category_request_id
+	var icon := make_label(CATEGORY_ICONS.get(category, "•"), 22, null, false)
+	icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon.custom_minimum_size = Vector2(28, 0)
+	row.add_child(icon)
 
-	# Affiche tout de suite la liste (avec les identifiants), puis la
-	# réaffiche une fois les vrais noms chargés.
-	show_category_entries(filtered_entries)
+	var text_box := VBoxContainer.new()
+	text_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	text_box.add_theme_constant_override("separation", 1)
 
-	for entry in filtered_entries:
-		await load_entry_template(entry)
+	var name_label := make_label(template.get("name", GameText.prettify_id(entry.get("template_id", ""))), 15, null, false)
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	text_box.add_child(name_label)
 
-		if request_id != category_request_id:
-			return
+	var subtitle := entry_subtitle(entry, template)
 
-	show_category_entries(filtered_entries)
+	if not subtitle.is_empty():
+		var subtitle_label := make_label(subtitle, 12, COLOR_MUTED, false)
+		subtitle_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		text_box.add_child(subtitle_label)
 
+	row.add_child(text_box)
 
-# Charge le template d'une entry dans loaded_templates. Les templates sont
-# mis en cache par ApiClient : rouvrir une catégorie ne refait pas d'appel.
-func load_entry_template(entry: Dictionary) -> void:
-	var template_id: String = entry.get("template_id", "")
+	# Disponibilité à droite (stock, compte à rebours), mise à jour en continu.
+	var info := availability(entry)
+	var status_label := make_label(info[0], 12, info[1], false)
+	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(status_label)
+	status_labels[entry.get("id", "")] = {"label": status_label, "entry": entry}
 
-	if template_id.is_empty() or loaded_templates.has(template_id):
-		return
+	var chevron := make_label("›", 22, COLOR_MUTED, false)
+	chevron.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(chevron)
 
-	var res := await ApiClient.get_template(
-		ApiClient.template_kind_for_entry(entry),
-		template_id
-	)
-
-	if res.ok:
-		loaded_templates[template_id] = res.data
-
-
-func show_category_entries(entries: Array) -> void:
-	zone_description.visible = false
-	categories_container.visible = false
-	entry_detail_container.visible = false
-	entries_container.visible = true
-
-	# Nettoie l'ancien contenu.
-	for child in entries_container.get_children():
-		child.queue_free()
-
-	var back_categories_button := Button.new()
-	back_categories_button.text = "← Catégories"
-	back_categories_button.custom_minimum_size = Vector2(0, 45)
-
-	back_categories_button.pressed.connect(
-		func():
-			show_categories()
-	)
-
-	entries_container.add_child(back_categories_button)
-
-	for entry in entries:
-		var button := Button.new()
-
-		var template_id: String = entry.get("template_id", "")
-		var template: Dictionary = loaded_templates.get(template_id, {})
-
-		button.text = template.get("name", template_id)
-		button.custom_minimum_size = Vector2(0, 50)
-
-		button.pressed.connect(
-			func():
-				open_entry_detail(entry)
-		)
-
-		entries_container.add_child(button)
+	return button
 
 
-func show_categories() -> void:
-	# Invalide un éventuel chargement de catégorie en cours.
-	category_request_id += 1
-	entries_container.visible = false
-	categories_container.visible = true
-	zone_description.visible = true
+func entry_subtitle(entry: Dictionary, template: Dictionary) -> String:
+	match entry.get("template_type", ""):
+		"monster":
+			var text := "Niveau %d" % int(template.get("level", 1))
+			var role: String = template.get("role", "normal")
+			if ROLE_LABELS.has(role):
+				text += " · " + ROLE_LABELS[role]
+			return text
+		"resource":
+			var requirement = template.get("profession_required")
+			if requirement is Dictionary:
+				return "%s niv. %d" % [GameText.profession_label(requirement.get("profession_id", "")), int(requirement.get("min_level", 1))]
+			return "Ressource"
+		"npc":
+			return str(template.get("role", "Habitant"))
+		"quest_giver":
+			var count: int = template.get("objectives", []).size()
+			return "Quête · %d objectif%s" % [count, "s" if count > 1 else ""]
+		"shop":
+			var offers: int = template.get("sell_offers", []).size()
+			return "Boutique · %d article%s" % [offers, "s" if offers > 1 else ""]
+		"player_market":
+			return "Autel des Ventes · entre joueurs"
+		_:
+			return ""
 
+
+# --- Page fiche -----------------------------------------------------------
 
 func open_entry_detail(entry: Dictionary) -> void:
-	entries_container.visible = false
-	entry_detail_container.visible = true
+	if current_entry.is_empty():
+		list_scroll = scroll.scroll_vertical
 
-	for child in entry_detail_container.get_children():
-		child.queue_free()
-
-	var template_id: String = entry.get("template_id", "")
-	var template: Dictionary = loaded_templates.get(template_id, {})
-
-	var back_button_detail := Button.new()
-	back_button_detail.text = "← Liste"
-	back_button_detail.custom_minimum_size = Vector2(0, 45)
-	back_button_detail.pressed.connect(
-		func():
-			entry_detail_container.visible = false
-			entries_container.visible = true
-	)
-	entry_detail_container.add_child(back_button_detail)
+	page_id += 1
+	current_entry = entry
+	clear_body()
 	scroll.scroll_vertical = 0
 
-	# ============ RESOURCE =============
-	if entry.get("template_type", "") == "resource":
-		var panel = RESOURCE_PANEL_SCRIPT.new()
-		entry_detail_container.add_child(panel)
-		panel.setup(zone_data.get("id", ""), entry, template)
+	var template := template_of(entry)
+
+	match entry.get("template_type", ""):
+		"resource":
+			var panel = RESOURCE_PANEL_SCRIPT.new()
+			body.add_child(panel)
+			panel.setup(zone_data.get("id", ""), entry, template)
+		"monster":
+			show_monster_detail(entry, template)
+		"npc":
+			show_npc_detail(template)
+		"quest_giver":
+			show_quest_detail(template)
+		"shop":
+			show_shop_detail(template)
+		_:
+			show_generic_detail(entry, template)
+
+	animate_page(true)
+
+
+func add_detail_header(entry_name: String, meta: String, meta_color = COLOR_MUTED) -> void:
+	add_label(entry_name, 22)
+
+	if not meta.is_empty():
+		add_label(meta, 13, meta_color)
+
+
+func add_description(template: Dictionary) -> void:
+	var description: String = template.get("description", "")
+
+	if not description.is_empty():
+		add_label(description, 13, COLOR_MUTED)
+
+
+func add_soon_button(text: String) -> void:
+	var button := Button.new()
+	button.text = text
+	button.disabled = true
+	button.custom_minimum_size = Vector2(0, 50)
+	body.add_child(button)
+
+
+# ----- Monstre -----
+
+func show_monster_detail(entry: Dictionary, template: Dictionary) -> void:
+	var role: String = template.get("role", "normal")
+	var meta := "Niveau %d" % int(template.get("level", 1))
+
+	if ROLE_LABELS.has(role):
+		meta += " · " + ROLE_LABELS[role]
+
+	add_detail_header(template.get("name", "Monstre"), meta, COLOR_HIGHLIGHT if ROLE_LABELS.has(role) else COLOR_MUTED)
+	add_description(template)
+
+	# Statistiques en grille 3 × 2.
+	var stats: Dictionary = template.get("stats", {})
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+
+	for stat in STAT_ORDER:
+		var tile := UiStyle.make_card()
+		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var tile_box := VBoxContainer.new()
+		tile_box.add_theme_constant_override("separation", 0)
+		var value := make_label(GameText.format_number(float(stats.get(stat, 0))), 18, null, false)
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var label := make_label(STAT_LABELS[stat], 11, COLOR_MUTED, false)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tile_box.add_child(value)
+		tile_box.add_child(label)
+		tile.add_child(tile_box)
+		grid.add_child(tile)
+
+	body.add_child(grid)
+
+	var moveset: Array = template.get("moveset", [])
+
+	if not moveset.is_empty():
+		var lines: Array = [make_label("Attaques", 15, null, false)]
+
+		for move in moveset:
+			lines.append(
+				make_label(
+					"%s · %s dégâts · toutes les %s s" % [
+						GameText.prettify_id(str(move.get("id", ""))),
+						GameText.format_number(float(move.get("damage", 0))),
+						GameText.format_number(float(move.get("cooldown_seconds", 0)))
+					],
+					13,
+					COLOR_DANGER
+				)
+			)
+
+		add_card(lines)
+
+	var loot_table: Array = template.get("loot_table", [])
+	var loot_box: VBoxContainer = null
+
+	if not loot_table.is_empty():
+		var card := add_card([make_label("Butin possible", 15, null, false)])
+		loot_box = card.get_child(0) as VBoxContainer
+
+	var available := is_entry_available(entry)
+
+	if not available:
+		add_label("Ce monstre n'est pas là pour l'instant (%s)." % availability(entry)[0], 13, COLOR_HIGHLIGHT)
+
+	var fight_button := Button.new()
+	fight_button.text = "⚔ Combattre"
+	fight_button.custom_minimum_size = Vector2(0, 54)
+	fight_button.add_theme_font_size_override("font_size", 18)
+	fight_button.disabled = not available
+	fight_button.pressed.connect(func(): open_combat(entry))
+	body.add_child(fight_button)
+
+	# Les noms du butin arrivent après coup sans bloquer l'affichage.
+	if loot_box == null:
 		return
 
-	var name_label := Label.new()
-	name_label.text = template.get("name", template_id)
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	entry_detail_container.add_child(name_label)
+	var id := page_id
+	var item_ids: Array = []
 
-	# ============ MONSTER =============
-	if entry.get("template_type", "") == "monster":
-		var level_label := Label.new()
-		level_label.text = "Niveau %d" % int(template.get("level", 1))
-		entry_detail_container.add_child(level_label)
+	for loot in loot_table:
+		item_ids.append(str(loot.get("item_id", "")))
 
-		var stats: Dictionary = template.get("stats", {})
+	await load_item_names(item_ids)
 
-		var stats_label := Label.new()
-		stats_label.text = (
-			"PV : %d\n" +
-			"ATK : %d | DEF : %d\n" +
-			"AGI : %d | INT : %d | SAG : %d"
-		) % [
-			int(stats.get("hp", 0)),
-			int(stats.get("atk", 0)),
-			int(stats.get("def", 0)),
-			int(stats.get("agi", 0)),
-			int(stats.get("int", 0)),
-			int(stats.get("sag", 0))
-		]
+	if id != page_id:
+		return
 
-		entry_detail_container.add_child(stats_label)
+	var total_weight := 0.0
 
-	var description_label := Label.new()
-	description_label.text = template.get(
-		"description",
-		"Aucune description disponible."
-	)
-	description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	entry_detail_container.add_child(description_label)
+	for loot in loot_table:
+		total_weight += float(loot.get("weight", 1))
 
-	if entry.get("template_type", "") == "monster":
-		var fight_button := Button.new()
-		fight_button.text = "⚔ Combattre"
-		fight_button.custom_minimum_size = Vector2(0, 50)
-
-		fight_button.pressed.connect(
-			func():
-				open_combat(entry)
+	for loot in loot_table:
+		var quantity_min := int(loot.get("quantity_min", 1))
+		var quantity_max := int(loot.get("quantity_max", quantity_min))
+		var quantity := "×%d" % quantity_min if quantity_min == quantity_max else "×%d–%d" % [quantity_min, quantity_max]
+		var chance: float = float(loot.get("weight", 1)) / maxf(total_weight, 1.0) * 100.0
+		loot_box.add_child(
+			make_label("%s %s  (%d %%)" % [item_names.get(str(loot.get("item_id", "")), ""), quantity, roundi(chance)], 13, COLOR_BONUS)
 		)
 
-		entry_detail_container.add_child(fight_button)
 
-	print("Fiche ouverte : ", entry.get("id", ""))
+# ----- Habitant -----
+
+func show_npc_detail(template: Dictionary) -> void:
+	add_detail_header(template.get("name", "Habitant"), str(template.get("role", "")))
+	add_description(template)
+
+	var dialogues: Array = template.get("dialogues", [])
+
+	if dialogues.is_empty():
+		return
+
+	var bubble := UiStyle.make_card(Color(0.2, 0.19, 0.16))
+	var quote := make_label("« %s »" % dialogues[0], 14)
+	bubble.add_child(quote)
+	body.add_child(bubble)
+
+	var talk_button := Button.new()
+	talk_button.text = "💬 Parler"
+	talk_button.custom_minimum_size = Vector2(0, 48)
+	body.add_child(talk_button)
+
+	var index := {"value": 0}
+	talk_button.pressed.connect(
+		func():
+			index.value = (index.value + 1) % dialogues.size()
+			quote.text = "« %s »" % dialogues[index.value]
+			bubble.modulate.a = 0.0
+			create_tween().tween_property(bubble, "modulate:a", 1.0, 0.2)
+	)
+
+
+# ----- Quête -----
+
+func show_quest_detail(template: Dictionary) -> void:
+	add_detail_header(template.get("name", "Quête"), "📜 Quête" + (" · répétable" if template.get("repeatable", false) else ""))
+	add_description(template)
+
+	var objectives: Array = template.get("objectives", [])
+	var objective_labels: Array = []
+
+	if not objectives.is_empty():
+		var lines: Array = [make_label("Objectifs", 15, null, false)]
+
+		for objective in objectives:
+			var label := make_label("• " + describe_objective(objective), 13)
+			lines.append(label)
+			objective_labels.append([label, objective])
+
+		add_card(lines)
+
+	var rewards: Dictionary = template.get("rewards", {})
+	var reward_lines: Array = [make_label("Récompenses", 15, null, false)]
+
+	if int(rewards.get("xp", 0)) > 0:
+		reward_lines.append(make_label("✨ %d XP" % int(rewards["xp"]), 13, COLOR_BONUS))
+
+	if int(rewards.get("gold", 0)) > 0:
+		reward_lines.append(make_label("💰 %d or" % int(rewards["gold"]), 13, COLOR_HIGHLIGHT))
+
+	var reward_items: Array = rewards.get("items", [])
+	var item_labels: Array = []
+
+	for reward in reward_items:
+		var label := make_label("", 13, COLOR_BONUS)
+		reward_lines.append(label)
+		item_labels.append([label, reward])
+
+	if reward_lines.size() > 1:
+		add_card(reward_lines)
+
+	add_soon_button("Accepter · bientôt disponible")
+
+	# Les cibles des objectifs peuvent venir d'autres zones : leurs noms sont
+	# chargés après l'affichage, comme les objets en récompense.
+	var item_ids: Array = []
+	var target_entries: Array = []
+
+	for reward in reward_items:
+		item_ids.append(str(reward.get("item_id", "")))
+
+	for objective in objectives:
+		match objective.get("type", ""):
+			"kill_count":
+				target_entries.append({"template_type": "monster", "template_id": str(objective.get("monster_id", ""))})
+			"gather_count":
+				target_entries.append({"template_type": "resource", "template_id": str(objective.get("resource_id", ""))})
+			"deliver_item":
+				item_ids.append(str(objective.get("item_id", "")))
+
+	var id := page_id
+	await load_templates(target_entries)
+	await load_item_names(item_ids)
+
+	if id != page_id:
+		return
+
+	for pair in objective_labels:
+		pair[0].text = "• " + describe_objective(pair[1])
+
+	for pair in item_labels:
+		pair[0].text = "🎁 %s ×%d" % [item_names.get(str(pair[1].get("item_id", "")), ""), int(pair[1].get("quantity", 1))]
+
+
+func describe_objective(objective: Dictionary) -> String:
+	var count := int(objective.get("count", 1))
+
+	match objective.get("type", ""):
+		"kill_count":
+			return "Vaincre %d × %s" % [count, name_for_template(str(objective.get("monster_id", "")))]
+		"gather_count":
+			return "Récolter %d × %s" % [count, name_for_template(str(objective.get("resource_id", "")))]
+		"deliver_item":
+			var item_id := str(objective.get("item_id", ""))
+			return "Apporter %d × %s" % [count, item_names.get(item_id, GameText.prettify_id(item_id))]
+		_:
+			return GameText.prettify_id(str(objective.get("type", "")))
+
+
+# Nom d'un monstre ou d'une ressource de la zone, si son template est chargé.
+func name_for_template(template_id: String) -> String:
+	return loaded_templates.get(template_id, {}).get("name", GameText.prettify_id(template_id))
+
+
+# ----- Commerce -----
+
+func show_shop_detail(template: Dictionary) -> void:
+	add_detail_header(template.get("name", "Boutique"), "🛒 Boutique")
+	add_description(template)
+
+	var offers: Array = template.get("sell_offers", [])
+	var offer_labels: Array = []
+
+	if not offers.is_empty():
+		var lines: Array = [make_label("À vendre", 15, null, false)]
+
+		for offer in offers:
+			var row := HBoxContainer.new()
+			var name_label := make_label(GameText.prettify_id(str(offer.get("item_id", ""))), 13, null, false)
+			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(name_label)
+			row.add_child(make_label("💰 %d" % int(offer.get("price", 0)), 13, COLOR_HIGHLIGHT, false))
+			lines.append(row)
+			offer_labels.append([name_label, offer])
+
+		add_card(lines)
+
+	add_soon_button("Acheter · bientôt disponible")
+
+	var item_ids: Array = []
+
+	for offer in offers:
+		item_ids.append(str(offer.get("item_id", "")))
+
+	var id := page_id
+	await load_item_names(item_ids)
+
+	if id != page_id:
+		return
+
+	for pair in offer_labels:
+		pair[0].text = item_names.get(str(pair[1].get("item_id", "")), pair[0].text)
+
+
+func show_generic_detail(entry: Dictionary, template: Dictionary) -> void:
+	var meta := ""
+
+	if entry.get("template_type", "") == "player_market":
+		meta = "🛒 Autel des Ventes · échanges entre joueurs"
+
+	add_detail_header(template.get("name", GameText.prettify_id(entry.get("template_id", ""))), meta)
+	add_description(template)
+
+	if entry.get("template_type", "") == "player_market":
+		add_soon_button("Ouvrir · bientôt disponible")
+
+
+# --- Navigation ---------------------------------------------------------------
+
+func _on_back_pressed() -> void:
+	if current_entry.is_empty():
+		back_requested.emit()
+		return
+
+	# Retour à la liste : la disponibilité a pu changer (récolte...).
+	page_id += 1
+	var id := page_id
+	await refresh_states()
+
+	if id == page_id:
+		show_list()
 
 
 func open_combat(entry: Dictionary) -> void:
@@ -323,10 +863,15 @@ func open_combat(entry: Dictionary) -> void:
 	combat_screen.prepare_combat(
 		zone_data.get("id", ""),
 		entry,
-		loaded_templates.get(entry.get("template_id", ""), {})
+		template_of(entry)
 	)
 
 	combat_screen.back_requested.connect(
 		func():
 			combat_screen.queue_free()
+			# Le monstre vient peut-être d'être vaincu : on rafraîchit la fiche.
+			await refresh_states()
+
+			if current_entry == entry:
+				open_entry_detail(entry)
 	)

@@ -32,6 +32,19 @@ static func make_card(color := COLOR_CARD) -> PanelContainer:
 	return card
 
 
+# Bouton au look de carte : son contenu (labels, icônes) est ajouté en enfant
+# et doit ignorer la souris pour laisser le clic au bouton.
+static func make_card_button(min_height := 64.0) -> Button:
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(0, min_height)
+	button.add_theme_stylebox_override("normal", card_style())
+	button.add_theme_stylebox_override("hover", card_style(Color(0.2, 0.2, 0.22)))
+	button.add_theme_stylebox_override("pressed", card_style(Color(0.24, 0.24, 0.27)))
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	button.add_theme_stylebox_override("disabled", card_style(Color(0.13, 0.13, 0.14)))
+	return button
+
+
 # Donne à une ProgressBar un fond sombre et un remplissage coloré arrondis.
 static func style_bar(bar: ProgressBar, fill_color: Color) -> void:
 	var background := StyleBoxFlat.new()
