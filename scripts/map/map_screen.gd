@@ -6,11 +6,13 @@ extends Control
 @onready var map_container: Control = $MapViewport/MapContainer
 @onready var character_button: Button = $CharacterButton
 @onready var quest_button: Button = $QuestButton
+@onready var craft_button: Button = $CraftButton
 
 const ZONE_NODE_SCENE := preload("res://scene/map/ZoneNode.tscn")
 const ZONE_SCREEN_SCENE := preload("res://scene/zone/ZoneScreen.tscn")
 const CHARACTER_SCREEN_SCENE := preload("res://scene/character/CharacterScreen.tscn")
 const QUEST_JOURNAL_SCENE := preload("res://scene/quests/QuestJournal.tscn")
+const CRAFT_SCREEN_SCENE := preload("res://scene/craft/CraftScreen.tscn")
 
 # Nombre d'écrans ouverts par-dessus la carte : tant qu'il y en a, la carte
 # ne doit pas défiler sous les gestes destinés à ces écrans.
@@ -32,6 +34,7 @@ var map_initialized := false
 func _ready() -> void:
 	character_button.pressed.connect(_on_character_button_pressed)
 	quest_button.pressed.connect(_on_quest_button_pressed)
+	craft_button.pressed.connect(_on_craft_button_pressed)
 	GameState.session_failed.connect(_on_session_failed)
 	GameState.player_changed.connect(_on_player_changed)
 
@@ -315,6 +318,13 @@ func _on_quest_button_pressed() -> void:
 		return
 
 	open_overlay(QUEST_JOURNAL_SCENE.instantiate())
+
+
+func _on_craft_button_pressed() -> void:
+	if not GameState.is_ready:
+		return
+
+	open_overlay(CRAFT_SCREEN_SCENE.instantiate())
 
 
 # Affiche un écran plein cadre par-dessus la carte. L'écran doit émettre

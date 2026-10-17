@@ -1,0 +1,455 @@
+extends Control
+
+# Écran Artisanat, ouvert depuis la carte : on crafte partout, sans aller à
+# un atelier. Deux pages construites en code dans Body :
+#
+# * la liste des ateliers, avec le niveau du joueur dans chaque métier ;
+# * un atelier : réglage, ingrédients du sac, bouton Fabriquer et résultat.
+#
+# Une combinaison inédite est inventée par l'IA côté serveur, puis devient la
+# recette de tout le monde. Le bouton retour ramène de l'atelier à la liste.
+
+signal back_requested
+
+const COLOR_MUTED := UiStyle.COLOR_MUTED
+const COLOR_BONUS := UiStyle.COLOR_BONUS
+const COLOR_HIGHLIGHT := UiStyle.COLOR_HIGHLIGHT
+const COLOR_ERROR := UiStyle.COLOR_ERROR
+
+# Même limite que MAX_CRAFT_INPUTS côté serveur.
+const MAX_INPUTS := 4
+
+const STAT_LABELS := {"hp": "PV", "atk": "ATK", "def": "DEF", "agi": "AGI", "int": "INT", "sag": "SAG"}
+
+@onready var back_button: Button = $Layout/Header/BackButton
+@onready var title_label: Label = $Layout/Header/Title
+@onready var scroll: ScrollContainer = $Layout/Scroll
+@onready var body: VBoxContainer = $Layout/Scroll/Body
+
+var workshops: Array = []
+var items: Dictionary = {}
+
+var workshop: Dictionary = {}
+var parameters: Dictionary = {}
+# item_id -> quantité choisie, dans l'ordre d'ajout.
+var selection: Dictionary = {}
+var is_crafting := false
+var last_result: Dictionary = {}
+var last_error := ""
+
+
+func _ready() -> void:
+	back_button.pressed.connect(_on_back_pressed)
+	show_workshops()
+
+
+# --- Outils d'affichage -------------------------------------------------------
+
+func clear_body() -> void:
+	for child in body.get_children():
+		child.queue_free()
+
+
+func make_label(text: String, font_size := 0, color = null, wrap := true) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	if wrap:
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	if font_size > 0:
+		label.add_theme_font_size_override("font_size", font_size)
+
+	if color != null:
+		label.add_theme_color_override("font_color", color)
+
+	return label
+
+
+func add_label(text: String, font_size := 0, color = null) -> Label:
+	var label := make_label(text, font_size, color)
+	body.add_child(label)
+	return label
+
+
+func add_card_box(color := UiStyle.COLOR_CARD) -> VBoxContainer:
+	var card := UiStyle.make_card(color)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	card.add_child(box)
+	body.add_child(card)
+	return box
+
+
+func item_name(item_id: String) -> String:
+	return items.get(item_id, {}).get("name", GameText.prettify_id(item_id))
+
+
+func item_level(item_id: String) -> int:
+	return int(items.get(item_id, {}).get("level", 1))
+
+
+func profession_id() -> String:
+	return str(workshop.get("profession_required", {}).get("profession_id", ""))
+
+
+func profession_level(id: String) -> int:
+	# Un métier jamais pratiqué commence au niveau 1 (règle du serveur).
+	return int(GameState.player.get("professions", {}).get(id, {}).get("level", 1))
+
+
+func load_items(item_ids: Array) -> void:
+	for item_id in item_ids:
+		if items.has(item_id):
+			continue
+
+		var res := await ApiClient.get_template("item", item_id)
+		items[item_id] = res.data if res.ok else {}
+
+
+# --- Page : liste des ateliers ----------------------------------------------
+
+func show_workshops() -> void:
+	workshop = {}
+	title_label.text = "Artisanat"
+	clear_body()
+
+	if workshops.is_empty():
+		add_label("Chargement des ateliers...", 14, COLOR_MUTED)
+		var res := await ApiClient.get_content("/content/templates/workshop")
+
+		if not res.ok:
+			clear_body()
+			add_label("Impossible de charger les ateliers : " + res.error, 14, COLOR_ERROR)
+			return
+
+		for summary in res.data:
+			var detail := await ApiClient.get_template("workshop", str(summary.get("id", "")))
+
+			if detail.ok:
+				workshops.append(detail.data)
+
+		clear_body()
+
+	add_label("Assemble des objets de ton sac. Une combinaison jamais tentée donne naissance à un objet inédit, qui devient la recette de tous les joueurs.", 13, COLOR_MUTED)
+
+	for entry in workshops:
+		body.add_child(build_workshop_card(entry))
+
+
+func build_workshop_card(entry: Dictionary) -> Button:
+	var prof := str(entry.get("profession_required", {}).get("profession_id", ""))
+	var button := UiStyle.make_card_button(72)
+	button.pressed.connect(func(): open_workshop(entry))
+
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = 12
+	row.offset_right = -12
+	row.add_theme_constant_override("separation", 12)
+	button.add_child(row)
+
+	var icon := make_label(GameText.PROFESSION_ICONS.get(prof, "🔨"), 24, null, false)
+	icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon.custom_minimum_size = Vector2(30, 0)
+	row.add_child(icon)
+
+	var text_box := VBoxContainer.new()
+	text_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	text_box.add_child(make_label(str(entry.get("name", "Atelier")), 16, null, false))
+
+	var subtitle := make_label("%s · niveau %d" % [GameText.profession_name(prof), profession_level(prof)], 12, COLOR_MUTED, false)
+	subtitle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	text_box.add_child(subtitle)
+	row.add_child(text_box)
+
+	var chevron := make_label("›", 22, COLOR_MUTED, false)
+	chevron.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(chevron)
+
+	return button
+
+
+# --- Page : atelier -------------------------------------------------------------
+
+func open_workshop(entry: Dictionary) -> void:
+	workshop = entry
+	parameters = {}
+	selection = {}
+	last_result = {}
+	last_error = ""
+	title_label.text = str(entry.get("name", "Atelier"))
+	scroll.scroll_vertical = 0
+
+	clear_body()
+	add_label("Chargement du sac...", 14, COLOR_MUTED)
+	await load_items(GameState.player.get("inventory", {}).keys())
+	render_workshop()
+
+
+func render_workshop() -> void:
+	clear_body()
+
+	var prof := profession_id()
+	var level := profession_level(prof)
+
+	add_label(str(workshop.get("description", "")), 13, COLOR_MUTED)
+	add_label(
+		"%s · niveau %d — ingrédients jusqu'au niveau %d" % [GameText.profession_label(prof), level, level],
+		13,
+		COLOR_HIGHLIGHT
+	)
+
+	if not last_result.is_empty():
+		add_result_card()
+	elif not last_error.is_empty():
+		var box := add_card_box()
+		box.add_child(make_label("⚠ " + last_error, 14, COLOR_ERROR))
+
+	add_parameters()
+	add_selection()
+	add_craft_button()
+	add_inventory_picker(level)
+
+
+func add_parameters() -> void:
+	for parameter in workshop.get("parameters", []):
+		var id := str(parameter.get("id", ""))
+		var box := add_card_box()
+		box.add_child(make_label(str(parameter.get("label", GameText.prettify_id(id))), 15, null, false))
+
+		var flow := HFlowContainer.new()
+		flow.add_theme_constant_override("h_separation", 6)
+		flow.add_theme_constant_override("v_separation", 6)
+
+		for option in parameter.get("options", []):
+			var chip := Button.new()
+			chip.text = str(option)
+			chip.toggle_mode = true
+			chip.button_pressed = parameters.get(id, "") == option
+			chip.custom_minimum_size = Vector2(0, 38)
+			chip.disabled = is_crafting
+			chip.pressed.connect(
+				func():
+					parameters[id] = option
+					render_workshop()
+			)
+			flow.add_child(chip)
+
+		box.add_child(flow)
+
+
+func add_selection() -> void:
+	var box := add_card_box()
+	box.add_child(make_label("Ingrédients  (%d / %d)" % [selection.size(), MAX_INPUTS], 15, null, false))
+
+	if selection.is_empty():
+		box.add_child(make_label("Ajoute des objets de ton sac ci-dessous.", 12, COLOR_MUTED))
+		return
+
+	for item_id in selection:
+		var owned := int(GameState.player.get("inventory", {}).get(item_id, 0))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 4)
+
+		var name_label := make_label(item_name(item_id), 14)
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_label)
+
+		var minus := Button.new()
+		minus.text = "−"
+		minus.custom_minimum_size = Vector2(38, 38)
+		minus.disabled = is_crafting or selection[item_id] <= 1
+		minus.pressed.connect(
+			func():
+				selection[item_id] -= 1
+				render_workshop()
+		)
+		row.add_child(minus)
+
+		var quantity := make_label("%d / %d" % [selection[item_id], owned], 13, null, false)
+		quantity.custom_minimum_size = Vector2(48, 0)
+		quantity.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		quantity.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(quantity)
+
+		var plus := Button.new()
+		plus.text = "+"
+		plus.custom_minimum_size = Vector2(38, 38)
+		plus.disabled = is_crafting or selection[item_id] >= owned
+		plus.pressed.connect(
+			func():
+				selection[item_id] += 1
+				render_workshop()
+		)
+		row.add_child(plus)
+
+		var remove := Button.new()
+		remove.text = "✕"
+		remove.flat = true
+		remove.custom_minimum_size = Vector2(32, 38)
+		remove.disabled = is_crafting
+		remove.pressed.connect(
+			func():
+				selection.erase(item_id)
+				render_workshop()
+		)
+		row.add_child(remove)
+
+		box.add_child(row)
+
+
+func add_craft_button() -> void:
+	var missing := PackedStringArray()
+
+	for parameter in workshop.get("parameters", []):
+		if not parameters.has(str(parameter.get("id", ""))):
+			missing.append(str(parameter.get("label", "")).to_lower())
+
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(0, 56)
+	button.add_theme_font_size_override("font_size", 18)
+	button.pressed.connect(craft)
+
+	if is_crafting:
+		button.text = "⏳ Fabrication en cours..."
+		button.disabled = true
+	elif selection.is_empty():
+		button.text = "🔨 Fabriquer"
+		button.disabled = true
+	elif not missing.is_empty():
+		button.text = "Choisis : " + ", ".join(missing)
+		button.disabled = true
+	else:
+		button.text = "🔨 Fabriquer"
+
+	body.add_child(button)
+
+	if is_crafting:
+		add_label("Une combinaison inédite peut prendre quelques secondes : l'objet est en train d'être inventé.", 12, COLOR_MUTED)
+
+
+func add_inventory_picker(level: int) -> void:
+	add_label("🎒 Ton sac", 17)
+
+	var inventory: Dictionary = GameState.player.get("inventory", {})
+	var ids: Array = inventory.keys().filter(func(item_id): return not selection.has(item_id))
+	ids.sort_custom(func(a, b): return item_name(a).naturalnocasecmp_to(item_name(b)) < 0)
+
+	if ids.is_empty():
+		add_label("Rien d'autre à ajouter." if not inventory.is_empty() else "Ton sac est vide.", 13, COLOR_MUTED)
+		return
+
+	for item_id in ids:
+		var too_high := item_level(item_id) > level
+		var button := UiStyle.make_card_button(46)
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.text = "  %s  ×%d   ·   niv. %d" % [item_name(item_id), int(inventory[item_id]), item_level(item_id)]
+		button.disabled = too_high or is_crafting or selection.size() >= MAX_INPUTS
+
+		if too_high:
+			button.tooltip_text = "Niveau %d requis dans ce métier" % item_level(item_id)
+
+		button.pressed.connect(
+			func():
+				selection[item_id] = 1
+				render_workshop()
+		)
+		body.add_child(button)
+
+
+# --- Fabrication --------------------------------------------------------------
+
+func craft() -> void:
+	if is_crafting or selection.is_empty():
+		return
+
+	var inputs: Array = []
+
+	for item_id in selection:
+		inputs.append({"item_id": item_id, "quantity": selection[item_id]})
+
+	is_crafting = true
+	last_result = {}
+	last_error = ""
+	render_workshop()
+
+	var res := await GameState.perform_action(
+		"craft",
+		{"workshop_id": workshop.get("id", ""), "inputs": inputs, "parameters": parameters}
+	)
+
+	is_crafting = false
+
+	if res.ok:
+		last_result = res.data
+		var output_id := str(res.data.get("output_item_id", ""))
+		items[output_id] = res.data.get("output_item", {})
+	else:
+		last_error = res.error
+
+	# On garde la même sélection pour refaire la recette, dans la limite de
+	# ce qu'il reste dans le sac.
+	var inventory: Dictionary = GameState.player.get("inventory", {})
+
+	for item_id in selection.keys():
+		var owned := int(inventory.get(item_id, 0))
+
+		if owned <= 0:
+			selection.erase(item_id)
+		else:
+			selection[item_id] = mini(selection[item_id], owned)
+
+	render_workshop()
+	scroll.scroll_vertical = 0
+
+
+func add_result_card() -> void:
+	var item: Dictionary = last_result.get("output_item", {})
+	var is_new: bool = not last_result.get("from_cache", true)
+	var box := add_card_box(Color(0.2, 0.18, 0.12) if is_new else Color(0.17, 0.2, 0.15))
+
+	box.add_child(make_label("✨ Création inédite !" if is_new else "📜 Recette connue", 15, COLOR_HIGHLIGHT if is_new else COLOR_BONUS, false))
+	box.add_child(make_label("🎁 " + str(item.get("name", last_result.get("output_item_id", ""))), 18))
+
+	var category: String = {"equipment": "Équipement", "consumable": "Consommable", "material": "Matériau"}.get(str(item.get("category", "")), "Objet")
+	box.add_child(make_label("%s · niveau %d" % [category, int(item.get("level", 1))], 12, COLOR_MUTED))
+
+	var description := str(item.get("description", ""))
+
+	if not description.is_empty():
+		box.add_child(make_label(description, 13, COLOR_MUTED))
+
+	var equipment: Dictionary = item.get("equipment", {}) if item.get("equipment") is Dictionary else {}
+	var bonuses := PackedStringArray()
+
+	for stat in STAT_LABELS:
+		if equipment.get("stat_bonuses", {}).has(stat):
+			bonuses.append("%s +%s" % [STAT_LABELS[stat], GameText.format_number(float(equipment["stat_bonuses"][stat]))])
+
+	if not bonuses.is_empty():
+		box.add_child(make_label(" · ".join(bonuses), 13, COLOR_BONUS))
+
+	var profession: Dictionary = last_result.get("profession", {})
+
+	if not profession.is_empty():
+		box.add_child(make_label("✨ +%d XP %s" % [int(profession.get("xp_gained", 0)), GameText.profession_name(profession_id())], 13, COLOR_BONUS))
+
+		if int(profession.get("levels_gained", 0)) > 0:
+			box.add_child(make_label("🌟 %s niveau %d !" % [GameText.profession_name(profession_id()), int(profession.get("level", 1))], 13, COLOR_HIGHLIGHT))
+
+
+# --- Navigation ---------------------------------------------------------------
+
+func _on_back_pressed() -> void:
+	if is_crafting:
+		return
+
+	if workshop.is_empty():
+		back_requested.emit()
+	else:
+		show_workshops()
