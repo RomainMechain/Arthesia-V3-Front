@@ -53,11 +53,15 @@ func _process(_delta: float) -> void:
 			print("WebSocket déconnecté")
 			disconnected.emit()
 
+# Le WebSocket n'a pas d'en-tête par message : le jeton d'identité voyage
+# dans start_combat, où le serveur le vérifie.
 func start_combat(
 	player_id: String,
 	zone_id: String,
 	entry_id: String
 ) -> void:
+	var id_token := await Auth.get_id_token()
+
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		print("Impossible de démarrer : WebSocket non connecté")
 		return
@@ -66,12 +70,12 @@ func start_combat(
 		"action": "start_combat",
 		"player_id": player_id,
 		"zone_id": zone_id,
-		"entry_id": entry_id
+		"entry_id": entry_id,
+		"id_token": id_token,
 	}
 
 	socket.send_text(JSON.stringify(message))
 
-	print("Commande start_combat envoyée : ", message)
 
 func disconnect_from_combat() -> void:
 	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:

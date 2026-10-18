@@ -334,7 +334,17 @@ func render_stats() -> void:
 	stats_error_label.visible = false
 
 	add_professions_section()
+	add_account_section()
 	update_stats_display()
+
+
+func add_account_section() -> void:
+	add_section_title("👤 Compte")
+	add_label("%s · %s" % [GameState.player.get("display_name", ""), Auth.email], 13, COLOR_MUTED)
+
+	var sign_out := make_button("Se déconnecter")
+	sign_out.pressed.connect(func(): Auth.sign_out())
+	content.add_child(sign_out)
 
 
 func add_professions_section() -> void:

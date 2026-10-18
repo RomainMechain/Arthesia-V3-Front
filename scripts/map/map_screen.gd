@@ -13,6 +13,7 @@ const CHARACTER_SCREEN_SCENE := preload("res://scene/character/CharacterScreen.t
 const QUEST_JOURNAL_SCENE := preload("res://scene/quests/QuestJournal.tscn")
 const CRAFT_SCREEN_SCENE := preload("res://scene/craft/CraftScreen.tscn")
 const ZONE_NODE_SCRIPT := preload("res://scripts/map/zone_node.gd")
+const LOGIN_SCREEN_SCENE := preload("res://scene/auth/LoginScreen.tscn")
 
 # Les positions des zones (0 à 100) sont multipliées par MAP_SCALE pixels.
 const MAP_SCALE := 8.0
@@ -94,6 +95,7 @@ var center_tween: Tween
 
 var quest_badge: Label
 var character_badge: Label
+var login_screen: Control
 
 
 func _ready() -> void:
@@ -123,6 +125,21 @@ func _ready() -> void:
 	GameState.session_failed.connect(_on_session_failed)
 	GameState.player_changed.connect(_on_player_changed)
 	GameState.floor_changed.connect(_on_floor_changed)
+
+	# Sans session, l'écran de connexion couvre la carte. Se déconnecter
+	# recharge la scène pour repartir d'une carte vide.
+	Auth.needs_login.connect(func(): show_login())
+	GameState.character_needed.connect(func(error): show_login("character", error))
+	Auth.signed_out.connect(func(): get_tree().reload_current_scene())
+
+	if not Auth.is_signed_in() and not GameState.is_ready:
+		floor_title.text = "Arthesia"
+		floor_subtitle.text = ""
+
+		# Après une déconnexion, la scène est rechargée alors qu'Auth a déjà
+		# fini de démarrer : needs_login ne sera plus émis.
+		if not Auth.is_restoring:
+			show_login.call_deferred()
 
 	if GameState.is_ready:
 		_on_session_ready()
@@ -734,6 +751,23 @@ func _on_quest_button_pressed() -> void:
 func _on_craft_button_pressed() -> void:
 	if GameState.is_ready:
 		open_overlay(CRAFT_SCREEN_SCENE.instantiate())
+
+
+func show_login(mode := "sign_in", message := "") -> void:
+	if login_screen == null:
+		login_screen = LOGIN_SCREEN_SCENE.instantiate()
+		add_child(login_screen)
+		login_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		open_overlays += 1
+		login_screen.closed.connect(
+			func():
+				open_overlays -= 1
+				login_screen.queue_free()
+				login_screen = null
+		)
+
+	if mode != "sign_in" or not message.is_empty():
+		login_screen.show_mode(mode, message)
 
 
 # Affiche un écran plein cadre par-dessus la carte. L'écran doit émettre

@@ -2,44 +2,64 @@ extends Node
 
 # État de la session de jeu : qui joue et sur quel étage.
 #
-# L'identifiant du joueur est enregistré sur l'appareil (SESSION_FILE). Au
-# premier lancement, un nouveau joueur est créé côté serveur. Pour reprendre
-# un joueur existant pendant le développement, lancer le jeu avec
-# --player=<id> (Godot : Projet > Paramètres > Éditeur > Run > Main Run Args).
-# Quand l'authentification Firebase sera en place, son uid remplacera cet
-# identifiant local.
+# Le joueur est celui connecté par Auth : son identifiant est son uid
+# Firebase. La session démarre à chaque connexion ; un compte sans personnage
+# (inscription interrompue, pseudo déjà pris) émet character_needed pour que
+# l'écran de connexion demande un pseudo.
 #
 # L'étage n'est pas stocké : il se déduit de la zone courante du joueur.
 
 signal session_ready
 signal session_failed(message: String)
+signal character_needed(message: String)
 signal player_changed(player: Dictionary)
 signal floor_changed(floor_id: String)
-
-const SESSION_FILE := "user://session.cfg"
 
 var player_id := ""
 var player: Dictionary = {}
 var floor_id := ""
 var is_ready := false
 
+# Pseudo choisi à l'inscription, utilisé pour créer le personnage.
+var pending_display_name := ""
+
 
 func _ready() -> void:
-	start_session()
+	Auth.signed_in.connect(func(): start_session())
+	Auth.signed_out.connect(reset)
+
+
+func reset() -> void:
+	is_ready = false
+	player_id = ""
+	player = {}
+	floor_id = ""
 
 
 func start_session() -> void:
 	is_ready = false
-	player_id = _resolve_player_id()
+	player_id = Auth.uid
 
-	var player_res := await _load_or_create_player()
+	var player_res := await ApiClient.sync_player(player_id)
+
+	if player_res.status == 404:
+		if pending_display_name.is_empty():
+			character_needed.emit("")
+			return
+
+		player_res = await ApiClient.create_player(player_id, pending_display_name)
+
+		if not player_res.ok:
+			# Pseudo pris ou invalide : le compte existe, il faut un autre pseudo.
+			character_needed.emit(player_res.error)
+			return
 
 	if not player_res.ok:
 		session_failed.emit(player_res.error)
 		return
 
+	pending_display_name = ""
 	_set_player(player_res.data)
-	_save_player_id()
 
 	var floor_res := await _resolve_floor_id()
 
@@ -236,39 +256,6 @@ func describe_unlock(unlock: String) -> String:
 			return label + (str(res.data.get("name", id)) if res.ok else GameText.prettify_id(id))
 		_:
 			return "🔓 " + unlock
-
-
-func _resolve_player_id() -> String:
-	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--player="):
-			return arg.trim_prefix("--player=")
-
-	var config := ConfigFile.new()
-
-	if config.load(SESSION_FILE) == OK:
-		var saved_id: String = config.get_value("session", "player_id", "")
-
-		if not saved_id.is_empty():
-			return saved_id
-
-	return "joueur_" + Crypto.new().generate_random_bytes(4).hex_encode()
-
-
-func _save_player_id() -> void:
-	var config := ConfigFile.new()
-	config.load(SESSION_FILE)
-	config.set_value("session", "player_id", player_id)
-	config.save(SESSION_FILE)
-
-
-func _load_or_create_player() -> Dictionary:
-	var res := await ApiClient.get_player(player_id)
-
-	if res.status == 404:
-		print("Joueur ", player_id, " inconnu : création côté serveur")
-		res = await ApiClient.create_player(player_id)
-
-	return res
 
 
 # Renvoie un résultat au format ApiClient dont data est l'id de l'étage.

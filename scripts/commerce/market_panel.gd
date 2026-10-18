@@ -121,7 +121,7 @@ func build_listing_card(listing: Dictionary) -> PanelContainer:
 	box.add_child(make_row("%s  ×%d" % [item_name(item_id), quantity], "💰 %d" % price))
 
 	var unit := "%s or / u" % GameText.format_number(float(price) / max(quantity, 1)) if quantity > 1 else ""
-	var origin := "Vendu par %s · %s" % [listing.get("seller_player_id", "?"), listing.get("market_name", "un autel")]
+	var origin := "Vendu par %s · %s" % [listing.get("seller_name", listing.get("seller_player_id", "?")), listing.get("market_name", "un autel")]
 	box.add_child(make_label(origin + ("  ·  " + unit if not unit.is_empty() else ""), 12, COLOR_MUTED))
 
 	var buy_button := make_action_button("Acheter · %d or" % price)

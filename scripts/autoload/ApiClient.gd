@@ -30,6 +30,13 @@ func request_json(
 	var headers := PackedStringArray()
 	var body_text := ""
 
+	# Le serveur identifie le joueur par son jeton Firebase.
+	if Auth.is_signed_in():
+		var token := await Auth.get_id_token()
+
+		if not token.is_empty():
+			headers.append("Authorization: Bearer " + token)
+
 	if body != null:
 		headers.append("Content-Type: application/json")
 		body_text = JSON.stringify(body)
@@ -134,8 +141,13 @@ func get_player(player_id: String) -> Dictionary:
 	return await get_json("/players/" + player_id)
 
 
-func create_player(player_id: String) -> Dictionary:
-	return await post_json("/players", {"player_id": player_id})
+# Début de session : le serveur réévalue les déblocages avant de renvoyer le joueur.
+func sync_player(player_id: String) -> Dictionary:
+	return await post_json("/players/%s/sync" % player_id, {})
+
+
+func create_player(player_id: String, display_name: String) -> Dictionary:
+	return await post_json("/players", {"player_id": player_id, "display_name": display_name})
 
 
 # Étages du jeu et ceux que le joueur peut visiter (passage de l'étage

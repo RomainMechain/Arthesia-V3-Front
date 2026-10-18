@@ -16,6 +16,7 @@ config/features=PackedStringArray("4.5", "Mobile")
 
 [autoload]
 
+Auth="*res://scripts/autoload/Auth.gd"
 ApiClient="*res://scripts/autoload/ApiClient.gd"
 CombatClient="*res://scripts/autoload/CombatClient.gd"
 GameState="*res://scripts/autoload/GameState.gd"

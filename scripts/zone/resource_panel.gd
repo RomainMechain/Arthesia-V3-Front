@@ -293,8 +293,21 @@ func gather() -> void:
 	gather_button.text = "Récolte en cours..."
 	update_status()
 
+	# Le serveur note le début : il refusera la récolte avant la fin du délai.
+	var start := await ApiClient.post_action(
+		GameState.player_id,
+		"gather_start",
+		{"zone_id": zone_id, "entry_id": entry.get("id", "")}
+	)
+
+	if not start.ok:
+		is_gathering = false
+		add_result([start.error], COLOR_ERROR)
+		update_status()
+		return
+
 	# Le temps de récolte du template : le joueur est occupé pendant ce délai.
-	var duration: float = max(float(template.get("gather_time_seconds", 0)), 0.1)
+	var duration: float = max(float(start.data.get("gather_time_seconds", template.get("gather_time_seconds", 0))), 0.1)
 	gather_bar.value = 0
 	gather_bar.visible = true
 	var tween := create_tween()
