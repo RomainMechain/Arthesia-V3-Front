@@ -14,6 +14,7 @@ extends Node
 signal session_ready
 signal session_failed(message: String)
 signal player_changed(player: Dictionary)
+signal floor_changed(floor_id: String)
 
 const SESSION_FILE := "user://session.cfg"
 
@@ -52,6 +53,21 @@ func start_session() -> void:
 	session_ready.emit()
 
 
+# Déplace le joueur dans une zone (le serveur vérifie qu'elle est accessible).
+# Change d'étage si la zone est sur un autre étage.
+func travel(zone_id: String) -> Dictionary:
+	var res := await perform_action("travel", {"zone_id": zone_id})
+
+	if res.ok:
+		var new_floor_id := str(res.data.get("floor_id", floor_id))
+
+		if new_floor_id != floor_id:
+			floor_id = new_floor_id
+			floor_changed.emit(floor_id)
+
+	return res
+
+
 # Exécute une action pour le joueur courant puis recharge son état, ce qui
 # met à jour tous les écrans abonnés à player_changed.
 func perform_action(action: String, body: Dictionary = {}) -> Dictionary:
@@ -88,6 +104,99 @@ func describe_quest_progress(update: Dictionary) -> String:
 # État d'une quête pour le joueur courant : "", "active" ou "completed".
 func quest_state(quest_id: String) -> String:
 	return str(player.get("quests", {}).get(quest_id, {}).get("state", ""))
+
+
+# Explique une condition de déblocage, ligne par ligne : [[texte, remplie], ...].
+# Les groupes sont aplatis avec une ligne d'introduction (remplie = null).
+func describe_condition(condition) -> Array:
+	if typeof(condition) != TYPE_DICTIONARY:
+		return []
+
+	var lines: Array = []
+
+	if condition.get("type", "") == "group":
+		var any: bool = condition.get("mode", "all") == "any"
+		lines.append(["Une de ces conditions :" if any else "Toutes ces conditions :", null])
+
+		for child in condition.get("conditions", []):
+			lines.append_array(await describe_condition(child))
+
+		return lines
+
+	return [await _describe_leaf_condition(condition)]
+
+
+func _template_name(kind: String, template_id: String) -> String:
+	var res := await ApiClient.get_template(kind, template_id)
+	return str(res.data.get("name", template_id)) if res.ok else GameText.prettify_id(template_id)
+
+
+func _zone_name(zone_id: String) -> String:
+	var res := await ApiClient.list_zones()
+
+	if res.ok:
+		for zone in res.data:
+			if zone.get("id", "") == zone_id:
+				return str(zone.get("name", zone_id))
+
+	return GameText.prettify_id(zone_id)
+
+
+func _describe_leaf_condition(condition: Dictionary) -> Array:
+	var counters: Dictionary = player.get("lifetime_counters", {})
+
+	match condition.get("type", ""):
+		"level":
+			var level := int(player.get("level", 1))
+			return ["Atteindre le niveau %d (tu es niveau %d)" % [int(condition.get("min", 1)), level], level >= int(condition.get("min", 1))]
+		"quest":
+			var quest_id := str(condition.get("quest_id", ""))
+			var wanted := str(condition.get("state", "completed"))
+			var verb := "Terminer" if wanted == "completed" else "Commencer"
+			var state := quest_state(quest_id)
+			var met := state == wanted or (wanted == "active" and state == "completed")
+			return ["%s la quête « %s »" % [verb, await _template_name("quest", quest_id)], met]
+		"item":
+			var item_id := str(condition.get("item_id", ""))
+			return ["Posséder « %s »" % await _template_name("item", item_id), int(player.get("inventory", {}).get(item_id, 0)) > 0]
+		"zone":
+			var zone_id := str(condition.get("zone_id", ""))
+			return ["Débloquer « %s »" % await _zone_name(zone_id), player.get("unlocks", {}).get("zones", []).has(zone_id)]
+		"boss":
+			var zone_id := str(condition.get("zone_id", ""))
+			var met := false
+
+			# Boss d'étage : vaincu pour tout le serveur (état de la zone).
+			var state_res := await ApiClient.get_zone_state(zone_id)
+
+			if state_res.ok:
+				for entry_state in state_res.data.get("entries", {}).values():
+					if entry_state.get("status", "") == "defeated":
+						met = true
+
+			# Autre boss : vaincu par ce joueur (son profil).
+			for key in player.get("defeated_entries", []):
+				if str(key).begins_with(zone_id + "/"):
+					met = true
+
+			return ["Vaincre le gardien de « %s »" % await _zone_name(zone_id), met]
+		"kill_count":
+			var monster_id := str(condition.get("monster_id", ""))
+			var count := int(condition.get("count", 1))
+			var done := int(counters.get("kills", {}).get(monster_id, 0))
+			return ["Vaincre %d × %s (%d / %d)" % [count, await _template_name("monster", monster_id), mini(done, count), count], done >= count]
+		"gather_count":
+			var resource_id := str(condition.get("resource_id", ""))
+			var count := int(condition.get("count", 1))
+			var done := int(counters.get("gathers", {}).get(resource_id, 0))
+			return ["Récolter %d × %s (%d / %d)" % [count, await _template_name("resource", resource_id), mini(done, count), count], done >= count]
+		"deliver_item":
+			var item_id := str(condition.get("item_id", ""))
+			var count := int(condition.get("count", 1))
+			var done := int(counters.get("deliveries", {}).get(item_id, 0))
+			return ["Livrer %d × %s (%d / %d)" % [count, await _template_name("item", item_id), mini(done, count), count], done >= count]
+		_:
+			return [GameText.prettify_id(str(condition.get("type", "condition"))), false]
 
 
 # Les déblocages arrivent sous la forme "zone:<id>", "skill:<id>", "title:<id>".

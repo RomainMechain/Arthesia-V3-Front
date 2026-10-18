@@ -1,9 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://cwhn8r7ofse0k"]
 
 [ext_resource type="Script" uid="uid://comb22b7udhkt" path="res://scripts/map/map_screen.gd" id="1_o0oco"]
-
-[sub_resource type="LabelSettings" id="LabelSettings_ayafv"]
-font_size = 23
+[ext_resource type="Script" path="res://scripts/map/map_canvas.gd" id="2_canvas"]
 
 [node name="MapScreen" type="Control"]
 layout_mode = 3
@@ -12,8 +10,6 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-size_flags_horizontal = 4
-size_flags_vertical = 4
 script = ExtResource("1_o0oco")
 
 [node name="Background" type="ColorRect" parent="."]
@@ -23,7 +19,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.15487596, 0.154876, 0.15487596, 1)
+mouse_filter = 2
+color = Color(0.07, 0.08, 0.11, 1)
 
 [node name="MapViewport" type="Control" parent="."]
 clip_contents = true
@@ -31,63 +28,158 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = 82.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 
 [node name="MapContainer" type="Control" parent="MapViewport"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+layout_mode = 3
+anchors_preset = 0
+mouse_filter = 2
+script = ExtResource("2_canvas")
 
-[node name="FloorTitle" type="Label" parent="."]
-layout_mode = 0
-offset_left = 20.0
-offset_top = 25.0
-offset_right = 196.0
-offset_bottom = 60.0
-text = "Les Archipels Suspendus"
-label_settings = SubResource("LabelSettings_ayafv")
+[node name="TopBar" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = 76.0
+grow_horizontal = 2
+
+[node name="Row" type="HBoxContainer" parent="TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PrevFloor" type="Button" parent="TopBar/Row"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Étage précédent"
+text = "◀"
+
+[node name="Titles" type="VBoxContainer" parent="TopBar/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+alignment = 1
+
+[node name="FloorTitle" type="Label" parent="TopBar/Row/Titles"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Connexion..."
+horizontal_alignment = 1
 text_overrun_behavior = 3
 
-[node name="CraftButton" type="Button" parent="."]
+[node name="FloorSubtitle" type="Label" parent="TopBar/Row/Titles"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.65, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+horizontal_alignment = 1
+text_overrun_behavior = 3
+
+[node name="NextFloor" type="Button" parent="TopBar/Row"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Étage suivant"
+text = "▶"
+
+[node name="RecenterButton" type="Button" parent="."]
 layout_mode = 1
-anchors_preset = 1
+anchors_preset = 3
 anchor_left = 1.0
+anchor_top = 1.0
 anchor_right = 1.0
-offset_left = -164.0
-offset_top = 22.0
-offset_right = -118.0
-offset_bottom = 66.0
+anchor_bottom = 1.0
+offset_left = -60.0
+offset_top = -152.0
+offset_right = -12.0
+offset_bottom = -104.0
 grow_horizontal = 0
+grow_vertical = 0
+tooltip_text = "Revenir à ma position"
+text = "📍"
+
+[node name="ZoneSheet" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -104.0
+offset_right = -12.0
+offset_bottom = -104.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="SheetBox" type="VBoxContainer" parent="ZoneSheet"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BottomBar" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -92.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="Row" type="HBoxContainer" parent="BottomBar"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PlayerBox" type="VBoxContainer" parent="BottomBar/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 3
+alignment = 1
+
+[node name="PlayerLevel" type="Label" parent="BottomBar/Row/PlayerBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Niveau 1"
+text_overrun_behavior = 3
+
+[node name="XpBar" type="ProgressBar" parent="BottomBar/Row/PlayerBox"]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+show_percentage = false
+
+[node name="PlayerGold" type="Label" parent="BottomBar/Row/PlayerBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
+theme_override_font_sizes/font_size = 12
+text = "💰 0 or"
+
+[node name="CraftButton" type="Button" parent="BottomBar/Row"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_vertical = 4
 tooltip_text = "Artisanat"
+theme_override_font_sizes/font_size = 20
 text = "🔨"
 
-[node name="QuestButton" type="Button" parent="."]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -112.0
-offset_top = 22.0
-offset_right = -66.0
-offset_bottom = 66.0
-grow_horizontal = 0
+[node name="QuestButton" type="Button" parent="BottomBar/Row"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_vertical = 4
 tooltip_text = "Journal de quêtes"
+theme_override_font_sizes/font_size = 20
 text = "📜"
 
-[node name="CharacterButton" type="Button" parent="."]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -60.0
-offset_top = 22.0
-offset_right = -14.0
-offset_bottom = 66.0
-grow_horizontal = 0
+[node name="CharacterButton" type="Button" parent="BottomBar/Row"]
+custom_minimum_size = Vector2(52, 52)
+layout_mode = 2
+size_flags_vertical = 4
 tooltip_text = "Personnage"
+theme_override_font_sizes/font_size = 20
 text = "👤"

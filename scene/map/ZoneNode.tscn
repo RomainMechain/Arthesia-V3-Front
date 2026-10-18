@@ -5,31 +5,39 @@
 [node name="ZoneNode" type="Control"]
 layout_mode = 3
 anchors_preset = 0
-offset_right = 160.0
-offset_bottom = 100.0
+offset_right = 120.0
+offset_bottom = 104.0
 mouse_filter = 2
 script = ExtResource("1_acfot")
 
 [node name="ZoneButton" type="Button" parent="."]
 layout_mode = 0
-offset_left = 64.0
-offset_right = 96.0
-offset_bottom = 32.0
-text = "●"
+offset_left = 32.0
+offset_right = 88.0
+offset_bottom = 56.0
+pivot_offset = Vector2(28, 28)
+text = "📍"
 
 [node name="ZoneName" type="Label" parent="."]
 layout_mode = 0
-offset_top = 34.0
-offset_right = 160.0
-offset_bottom = 80.0
+offset_top = 60.0
+offset_right = 120.0
+offset_bottom = 104.0
+mouse_filter = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 12
 text = "Nom de zone"
 horizontal_alignment = 1
-autowrap_mode = 2
+autowrap_mode = 3
+max_lines_visible = 2
 
-[node name="ZoneStatus" type="Label" parent="."]
+[node name="Badge" type="Label" parent="."]
 layout_mode = 0
-offset_top = 70.0
-offset_right = 160.0
-offset_bottom = 95.0
-text = "Verrouillée"
-horizontal_alignment = 1
+offset_left = 76.0
+offset_top = -8.0
+offset_right = 104.0
+offset_bottom = 18.0
+mouse_filter = 2
+theme_override_font_sizes/font_size = 18
+text = ""

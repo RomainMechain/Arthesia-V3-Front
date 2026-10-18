@@ -138,6 +138,12 @@ func create_player(player_id: String) -> Dictionary:
 	return await post_json("/players", {"player_id": player_id})
 
 
+# Étages du jeu et ceux que le joueur peut visiter (passage de l'étage
+# précédent franchi).
+func get_player_floors(player_id: String) -> Dictionary:
+	return await get_json("/players/%s/floors" % player_id)
+
+
 # Journal : quêtes démarrées avec définition, progression et zones où les rendre.
 func get_player_quests(player_id: String) -> Dictionary:
 	return await get_json("/players/%s/quests" % player_id)
