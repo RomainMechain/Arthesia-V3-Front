@@ -15,6 +15,7 @@ const COLOR_HIGHLIGHT := UiStyle.COLOR_HIGHLIGHT
 const COLOR_ERROR := UiStyle.COLOR_ERROR
 const COLOR_DAMAGE_DEALT := Color(1.0, 0.85, 0.4)
 const COLOR_DAMAGE_TAKEN := Color(1.0, 0.45, 0.4)
+const COLOR_SHIELD := Color(0.55, 0.75, 1.0)
 
 const ROLE_LABELS := {
 	"elite": "⭐ Élite",
@@ -41,6 +42,9 @@ const MAX_LOG_LINES := 60
 @onready var attack_button: Button = $Layout/AttackButton
 @onready var attack_cooldown: ProgressBar = $Layout/AttackCooldown
 @onready var skills_grid: GridContainer = $Layout/SkillsGrid
+@onready var items_bar: HFlowContainer = $Layout/ItemsBar
+@onready var monster_effects: HFlowContainer = $Layout/MonsterCard/Box/MonsterEffects
+@onready var player_effects: HFlowContainer = $Layout/PlayerCard/Box/PlayerEffects
 @onready var result_overlay: ColorRect = $ResultOverlay
 @onready var result_panel: PanelContainer = $ResultOverlay/Center/ResultPanel
 @onready var result_title: Label = $ResultOverlay/Center/ResultPanel/Box/ResultTitle
@@ -68,6 +72,18 @@ var skill_ready_at: Dictionary = {}
 # skill_id -> {button, template}, dans l'ordre des compétences équipées.
 var skill_slots: Dictionary = {}
 var log_lines := 0
+
+# Consommables utilisables : item_id -> {button, template, count}.
+var item_slots: Dictionary = {}
+var item_ready_at := 0
+
+# Dernier état des effets reçu du serveur (champ status des événements) et
+# instant de réception, pour faire défiler les durées restantes.
+var last_status: Dictionary = {}
+var status_received_at := 0
+var effects_refresh := 0.0
+var phase := 0
+var phase_count := 0
 
 
 func _ready() -> void:
@@ -111,6 +127,7 @@ func prepare_combat(zone_id: String, entry: Dictionary, monster_data: Dictionary
 
 	show_monster_header()
 	await build_skill_buttons()
+	await build_item_buttons()
 
 	CombatClient.connect_to_combat()
 
@@ -123,6 +140,9 @@ func show_monster_header() -> void:
 
 	if ROLE_LABELS.has(role):
 		level_text = ROLE_LABELS[role] + " · " + level_text
+
+	if phase_count > 1:
+		level_text += " · Phase %d / %d" % [phase, phase_count]
 
 	monster_level.text = level_text
 
@@ -151,6 +171,95 @@ func build_skill_buttons() -> void:
 		skills_grid.add_child(button)
 
 		skill_slots[skill_id] = {"button": button, "template": template}
+
+
+# --- Consommables -----------------------------------------------------------
+
+func build_item_buttons() -> void:
+	for child in items_bar.get_children():
+		child.queue_free()
+
+	item_slots.clear()
+
+	var inventory: Dictionary = GameState.player.get("inventory", {})
+	var ids: Array = inventory.keys()
+	ids.sort()
+
+	for item_id in ids:
+		var res := await ApiClient.get_template("item", item_id)
+
+		if not res.ok or not is_usable_consumable(res.data):
+			continue
+
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(0, 40)
+		button.add_theme_font_size_override("font_size", 12)
+		button.disabled = true
+		button.tooltip_text = describe_consumable(res.data)
+		button.pressed.connect(func(): _on_item_pressed(item_id))
+		items_bar.add_child(button)
+
+		item_slots[item_id] = {"button": button, "template": res.data, "count": int(inventory[item_id])}
+
+	items_bar.visible = not item_slots.is_empty()
+
+
+# Mêmes règles que combat_engine.is_usable_consumable côté serveur.
+func is_usable_consumable(item: Dictionary) -> bool:
+	if item.get("category", "") != "consumable":
+		return false
+
+	return item.get("consumable", {}).get("effect_type", "") in ["heal", "restore_mana", "buff_stat"]
+
+
+func describe_consumable(item: Dictionary) -> String:
+	var consumable: Dictionary = item.get("consumable", {})
+	var amount := format_number(float(consumable.get("amount", 0)))
+
+	match consumable.get("effect_type", ""):
+		"heal":
+			return "Soigne %s PV" % amount
+		"restore_mana":
+			return "Rend %s mana" % amount
+		"buff_stat":
+			return "+%s %s pendant %d s" % [amount, str(consumable.get("stat", "")).to_upper(), int(consumable.get("duration_seconds", 0))]
+
+	return ""
+
+
+func consumable_icon(item: Dictionary) -> String:
+	match item.get("consumable", {}).get("effect_type", ""):
+		"heal":
+			return "💚"
+		"restore_mana":
+			return "💧"
+		_:
+			return "⬆"
+
+
+func update_item_button(item_id: String, now: int) -> void:
+	var slot: Dictionary = item_slots[item_id]
+	var button: Button = slot.button
+	var item: Dictionary = slot.template
+	var left: int = max(0, item_ready_at - now)
+	var effect_type: String = item.get("consumable", {}).get("effect_type", "")
+
+	if left > 0:
+		button.text = "%s ⏳ %.1f s" % [consumable_icon(item), left / 1000.0]
+	else:
+		button.text = "%s %s ×%d" % [consumable_icon(item), item.get("name", item_id), int(slot.count)]
+
+	# Comme le serveur : pas de soin à PV pleins, pas de mana à mana plein.
+	var wasted := (
+		(effect_type == "heal" and player_hp.value >= player_hp.max_value)
+		or (effect_type == "restore_mana" and mana_current >= player_mana.max_value)
+	)
+	button.disabled = left > 0 or slot.count <= 0 or wasted
+
+
+func _on_item_pressed(item_id: String) -> void:
+	if in_combat:
+		CombatClient.use_item(item_id)
 
 
 func skill_display_name(skill_id: String) -> String:
@@ -189,6 +298,16 @@ func _process(delta: float) -> void:
 
 	for skill_id in skill_slots:
 		update_skill_button(skill_id, now)
+
+	for item_id in item_slots:
+		update_item_button(item_id, now)
+
+	# Les durées des effets défilent localement, 4 fois par seconde.
+	effects_refresh += delta
+
+	if effects_refresh >= 0.25:
+		effects_refresh = 0.0
+		render_effects()
 
 
 func update_skill_button(skill_id: String, now: int) -> void:
@@ -293,6 +412,9 @@ func _on_combat_disconnected() -> void:
 
 
 func _on_combat_message(data: Dictionary) -> void:
+	if data.has("status"):
+		apply_status(data["status"])
+
 	match str(data.get("type", "")):
 		"combat_started":
 			on_combat_started(data)
@@ -302,6 +424,17 @@ func _on_combat_message(data: Dictionary) -> void:
 			on_player_skill_used(data)
 		"monster_attack":
 			on_monster_attack(data)
+		"player_item_used":
+			on_player_item_used(data)
+		"passive_triggered":
+			on_passive_triggered(data)
+		"monster_phase":
+			on_monster_phase(data)
+		"status":
+			if data.has("player_hp"):
+				set_player_hp(float(data["player_hp"]), player_hp.max_value)
+			if data.has("player_mana"):
+				set_mana(float(data["player_mana"]))
 		"combat_won":
 			finish_combat()
 			await show_victory(data)
@@ -341,6 +474,11 @@ func on_combat_started(data: Dictionary) -> void:
 	attack_ready_at = 0
 	attack_cooldown_ms = int(float(data.get("basic_attack_cooldown", 1)) * 1000)
 	skill_ready_at.clear()
+	item_ready_at = 0
+
+	phase = int(data.get("phase", 0)) if data.get("phase") != null else 0
+	phase_count = int(data.get("phase_count", 0)) if data.get("phase_count") != null else 0
+	show_monster_header()
 
 	combat_log.clear()
 	log_lines = 0
@@ -390,6 +528,12 @@ func on_player_skill_used(data: Dictionary) -> void:
 
 				if healed > 0:
 					spawn_floating_text("+" + format_number(healed), COLOR_BONUS, player_card)
+			"shield":
+				var amount := float(result.get("amount", 0))
+				details.append("bouclier de %s" % format_number(amount))
+				spawn_floating_text("🛡 " + format_number(amount), COLOR_SHIELD, player_card)
+			"buff", "debuff":
+				details.append(describe_effect_result(result))
 
 	var line := "✨ %s" % skill_display_name(skill_id)
 
@@ -401,20 +545,161 @@ func on_player_skill_used(data: Dictionary) -> void:
 	skill_ready_at[skill_id] = Time.get_ticks_msec() + int(float(data.get("next_ready_in", 0)) * 1000)
 
 
+func describe_effect_result(result: Dictionary) -> String:
+	var stat := str(result.get("stat", "")).to_upper()
+	var who := "ennemi " if result.get("target", "") == "enemy" else ""
+	var percent := float(result.get("percent", 0))
+	var flat := float(result.get("flat", 0))
+	var value := "%s%s %%" % ["+" if percent > 0 else "−", format_number(absf(percent))] if percent != 0 else "+%s" % format_number(flat)
+	return "%s%s %s (%d s)" % [who, stat, value, int(result.get("duration", 0))]
+
+
+func on_player_item_used(data: Dictionary) -> void:
+	var item_id := str(data.get("item_id", ""))
+
+	if item_slots.has(item_id):
+		item_slots[item_id].count = int(data.get("remaining", 0))
+
+	item_ready_at = Time.get_ticks_msec() + int(float(data.get("next_ready_in", 0)) * 1000)
+
+	var hp_before := player_hp.value
+
+	if data.has("player_hp"):
+		set_player_hp(float(data["player_hp"]), player_hp.max_value)
+
+	if data.has("player_mana"):
+		set_mana(float(data["player_mana"]))
+
+	var details := PackedStringArray()
+
+	for result in data.get("results", []):
+		match str(result.get("effect", "")):
+			"heal":
+				var healed: float = max(0.0, player_hp.value - hp_before)
+				details.append("+%s PV" % format_number(healed))
+				spawn_floating_text("+" + format_number(healed), COLOR_BONUS, player_card)
+			"mana":
+				details.append("+%s mana" % format_number(float(result.get("amount", 0))))
+				spawn_floating_text("+" + format_number(float(result.get("amount", 0))), UiStyle.COLOR_MANA, player_card)
+			"buff":
+				details.append(describe_effect_result(result))
+
+	add_log("🎒 %s : %s" % [data.get("item_name", item_id), ", ".join(details)], COLOR_BONUS)
+
+
+func on_passive_triggered(data: Dictionary) -> void:
+	var amount := float(data.get("amount", 0))
+	add_log("🛡 %s : bouclier de %s !" % [data.get("skill_name", "Passif"), format_number(amount)], COLOR_SHIELD)
+	spawn_floating_text("🛡 " + format_number(amount), COLOR_SHIELD, player_card)
+	flash(player_card, Color(0.8, 0.9, 1.5))
+
+
+func on_monster_phase(data: Dictionary) -> void:
+	phase = int(data.get("phase", phase))
+	phase_count = int(data.get("phase_count", phase_count))
+	show_monster_header()
+	add_log("⚠ %s entre en phase %d : de nouvelles attaques arrivent !" % [monster_name.text, phase], COLOR_HIGHLIGHT)
+	flash(monster_card, Color(1.6, 1.3, 0.6))
+	spawn_floating_text("Phase %d !" % phase, COLOR_HIGHLIGHT, monster_card)
+
+
 func on_monster_attack(data: Dictionary) -> void:
 	var damage := float(data.get("final_damage", 0))
+	var absorbed := float(data.get("absorbed", 0))
+
+	if absorbed > 0:
+		spawn_floating_text("🛡 -" + format_number(absorbed), COLOR_SHIELD, player_card)
 
 	set_player_hp(float(data.get("player_hp", 0)), float(data.get("player_max_hp", player_hp.max_value)))
 
 	if data.has("player_mana"):
 		set_mana(float(data["player_mana"]))
 
+	var absorbed_text := " (%s absorbés)" % format_number(absorbed) if absorbed > 0 else ""
 	add_log(
-		"🩸 %s : %s dégâts subis" % [prettify_id(str(data.get("skill_id", "Attaque"))), format_number(damage)],
+		"🩸 %s : %s dégâts subis%s" % [prettify_id(str(data.get("skill_id", "Attaque"))), format_number(damage), absorbed_text],
 		COLOR_DAMAGE_TAKEN
 	)
 	spawn_floating_text("-" + format_number(damage), COLOR_DAMAGE_TAKEN, player_card)
 	flash(player_card, Color(1.5, 0.7, 0.7))
+
+
+func apply_status(status: Dictionary) -> void:
+	last_status = status
+	status_received_at = Time.get_ticks_msec()
+
+	# Les buffs d'agilité et de sagesse changent les cadences.
+	mana_regen = float(status.get("player_mana_regen", mana_regen))
+	render_effects()
+
+
+func make_chip(text: String, color: Color) -> Label:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(color, 0.18)
+	style.border_color = Color(color, 0.6)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(8)
+	style.content_margin_left = 6
+	style.content_margin_right = 6
+	style.content_margin_top = 1
+	style.content_margin_bottom = 1
+
+	var chip := Label.new()
+	chip.text = text
+	chip.add_theme_stylebox_override("normal", style)
+	chip.add_theme_font_size_override("font_size", 11)
+	chip.add_theme_color_override("font_color", color.lightened(0.3))
+	return chip
+
+
+func effect_chip_text(effect: Dictionary, elapsed: float) -> String:
+	var percent := float(effect.get("percent", 0))
+	var flat := float(effect.get("flat", 0))
+	var value := ""
+
+	if percent != 0:
+		value = "%s%s %%" % ["+" if percent > 0 else "−", format_number(absf(percent))]
+	else:
+		value = "+%s" % format_number(flat)
+
+	var left: float = max(0.0, float(effect.get("remaining", 0)) - elapsed)
+	return "%s %s · %d s" % [effect.get("stat_label", ""), value, ceili(left)]
+
+
+func render_effects() -> void:
+	for child in monster_effects.get_children():
+		child.queue_free()
+
+	for child in player_effects.get_children():
+		child.queue_free()
+
+	if last_status.is_empty() or not in_combat:
+		return
+
+	var elapsed := (Time.get_ticks_msec() - status_received_at) / 1000.0
+
+	for effect in last_status.get("monster_effects", []):
+		if float(effect.get("remaining", 0)) - elapsed > 0:
+			var weaker := float(effect.get("percent", 0)) < 0
+			monster_effects.add_child(make_chip(effect_chip_text(effect, elapsed), COLOR_BONUS if weaker else COLOR_DAMAGE_TAKEN))
+
+	var shield := float(last_status.get("player_shield", 0))
+
+	if shield > 0:
+		var text := "🛡 %s" % format_number(shield)
+		var shield_left = last_status.get("player_shield_remaining")
+
+		if shield_left != null:
+			text += " · %d s" % ceili(max(0.0, float(shield_left) - elapsed))
+
+		player_effects.add_child(make_chip(text, COLOR_SHIELD))
+
+	for effect in last_status.get("player_effects", []):
+		if float(effect.get("remaining", 0)) - elapsed > 0:
+			player_effects.add_child(make_chip(effect_chip_text(effect, elapsed), COLOR_BONUS))
+
+	for passive_name in last_status.get("active_passives", []):
+		player_effects.add_child(make_chip("✨ " + str(passive_name), COLOR_HIGHLIGHT))
 
 
 func finish_combat() -> void:
@@ -426,6 +711,12 @@ func finish_combat() -> void:
 
 	for skill_id in skill_slots:
 		skill_slots[skill_id].button.disabled = true
+
+	for item_id in item_slots:
+		item_slots[item_id].button.disabled = true
+
+	last_status = {}
+	render_effects()
 
 
 # --- Fin de combat ---------------------------------------------------------
@@ -509,6 +800,7 @@ func _on_retry_pressed() -> void:
 	# Les compétences équipées ont pu changer depuis le début du combat.
 	player_name.text = "Toi · Niveau %d" % int(GameState.player.get("level", 1))
 	await build_skill_buttons()
+	await build_item_buttons()
 
 	# La connexion reste ouverte après une victoire ou une défaite : on peut
 	# relancer directement un combat dessus.

@@ -103,5 +103,13 @@ func use_skill(skill_id: String) -> void:
 	print("Compétence envoyée : ", skill_id)
 
 
+func use_item(item_id: String) -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		print("Impossible d'utiliser l'objet : WebSocket non connecté")
+		return
+
+	socket.send_text(JSON.stringify({"action": "use_item", "item_id": item_id}))
+
+
 func is_open() -> bool:
 	return socket.get_ready_state() == WebSocketPeer.STATE_OPEN
