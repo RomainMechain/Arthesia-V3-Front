@@ -95,6 +95,7 @@ var center_tween: Tween
 
 var quest_badge: Label
 var character_badge: Label
+var hp_bar: ProgressBar
 var login_screen: Control
 
 
@@ -111,6 +112,14 @@ func _ready() -> void:
 		style.set_corner_radius_all(24)
 		recenter_button.add_theme_stylebox_override(style_name, style)
 	UiStyle.style_bar(xp_bar, UiStyle.COLOR_XP)
+
+	# Barre de PV au-dessus de la barre d'XP : elle remonte en continu.
+	hp_bar = ProgressBar.new()
+	hp_bar.custom_minimum_size = Vector2(0, 6)
+	hp_bar.show_percentage = false
+	UiStyle.style_bar(hp_bar, UiStyle.COLOR_HP)
+	xp_bar.get_parent().add_child(hp_bar)
+	xp_bar.get_parent().move_child(hp_bar, xp_bar.get_index())
 
 	quest_badge = make_badge(quest_button)
 	character_badge = make_badge(character_button)
@@ -274,9 +283,24 @@ func update_hud() -> void:
 	xp_bar.value = xp
 	xp_bar.tooltip_text = "%d / %d XP" % [xp, xp_to_next_level]
 	player_gold.text = "💰 %d or" % int(player.get("currency", {}).get("or", 0))
+	update_hp_bar()
 
 	set_badge(character_badge, int(player.get("stat_points", {}).get("available", 0)))
 	set_badge(quest_badge, ready_quest_count)
+
+
+func update_hp_bar() -> void:
+	var max_hp := GameState.max_hp()
+	var hp := GameState.current_hp()
+	hp_bar.max_value = max(max_hp, 1)
+	hp_bar.value = hp
+	hp_bar.tooltip_text = "❤ %d / %d PV" % [int(hp), int(max_hp)]
+
+
+func _process(_delta: float) -> void:
+	# Les PV remontent avec le temps : la barre suit tant qu'ils ne sont pas pleins.
+	if GameState.is_ready and hp_bar.value < hp_bar.max_value:
+		update_hp_bar()
 
 
 # --- Navigation entre étages --------------------------------------------------------

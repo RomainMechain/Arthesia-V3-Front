@@ -23,6 +23,10 @@ var is_ready := false
 # Pseudo choisi à l'inscription, utilisé pour créer le personnage.
 var pending_display_name := ""
 
+# Moment où player.health_view a été reçu : les PV remontent ensuite en
+# continu (current_hp), sans redemander le joueur au serveur.
+var health_received_ms := 0
+
 
 func _ready() -> void:
 	Auth.signed_in.connect(func(): start_session())
@@ -108,7 +112,24 @@ func refresh_player() -> void:
 
 func _set_player(data: Dictionary) -> void:
 	player = data
+	health_received_ms = Time.get_ticks_msec()
 	player_changed.emit(player)
+
+
+# PV hors combat : ceux perdus aux combats précédents remontent avec le temps
+# (plus vite en ville). Le serveur envoie l'état dans player.health_view.
+func max_hp() -> float:
+	return float(player.get("health_view", {}).get("max", 0))
+
+
+func current_hp() -> float:
+	var view: Dictionary = player.get("health_view", {})
+
+	if view.is_empty():
+		return 0.0
+
+	var elapsed := (Time.get_ticks_msec() - health_received_ms) / 1000.0
+	return minf(float(view.get("max", 0)), float(view.get("current", 0)) + float(view.get("regen_per_second", 0)) * elapsed)
 
 
 # Ligne de résumé pour une entrée de quest_progress (combat, récolte).

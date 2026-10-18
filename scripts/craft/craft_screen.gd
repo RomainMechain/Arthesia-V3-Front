@@ -18,6 +18,8 @@ const COLOR_ERROR := UiStyle.COLOR_ERROR
 
 # Même limite que MAX_CRAFT_INPUTS côté serveur.
 const MAX_INPUTS := 4
+# Un niveau de métier couvre deux niveaux d'objet (balance.ITEM_LEVELS_PER_PROFESSION_LEVEL côté serveur).
+const ITEM_LEVELS_PER_PROFESSION_LEVEL := 2
 
 const STAT_LABELS := {"hp": "PV", "atk": "ATK", "def": "DEF", "agi": "AGI", "int": "INT", "sag": "SAG"}
 
@@ -92,6 +94,10 @@ func item_level(item_id: String) -> int:
 
 func profession_id() -> String:
 	return str(workshop.get("profession_required", {}).get("profession_id", ""))
+
+
+func max_item_level(level: int) -> int:
+	return level * ITEM_LEVELS_PER_PROFESSION_LEVEL
 
 
 func profession_level(id: String) -> int:
@@ -199,7 +205,7 @@ func render_workshop() -> void:
 
 	add_label(str(workshop.get("description", "")), 13, COLOR_MUTED)
 	add_label(
-		"%s · niveau %d — ingrédients jusqu'au niveau %d" % [GameText.profession_label(prof), level, level],
+		"%s · niveau %d — ingrédients jusqu'au niveau %d" % [GameText.profession_label(prof), level, max_item_level(level)],
 		13,
 		COLOR_HIGHLIGHT
 	)
@@ -345,14 +351,14 @@ func add_inventory_picker(level: int) -> void:
 		return
 
 	for item_id in ids:
-		var too_high := item_level(item_id) > level
+		var too_high := item_level(item_id) > max_item_level(level)
 		var button := UiStyle.make_card_button(46)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.text = "  %s  ×%d   ·   niv. %d" % [item_name(item_id), int(inventory[item_id]), item_level(item_id)]
 		button.disabled = too_high or is_crafting or selection.size() >= MAX_INPUTS
 
 		if too_high:
-			button.tooltip_text = "Niveau %d requis dans ce métier" % item_level(item_id)
+			button.tooltip_text = "Niveau %d requis dans ce métier" % ceili(item_level(item_id) / float(ITEM_LEVELS_PER_PROFESSION_LEVEL))
 
 		button.pressed.connect(
 			func():

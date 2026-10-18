@@ -33,14 +33,14 @@ const STAT_NAMES := {
 	"sag": "Sagesse",
 }
 
-# Rôle de chaque stat en combat, d'après les formules de combat_routes.py.
+# Rôle de chaque stat en combat, d'après les formules de combat_engine.py.
 const STAT_HINTS := {
 	"hp": "Encaisser plus de coups",
 	"atk": "Dégâts physiques",
 	"def": "Réduit les dégâts subis",
-	"agi": "Attaque basique plus rapide",
-	"int": "Mana max, magie et soins",
-	"sag": "Régénération de mana",
+	"agi": "Vitesse, critiques et esquive",
+	"int": "Dégâts magiques et mana max",
+	"sag": "Soins, boucliers et régénération de mana",
 }
 
 const ITEM_CATEGORY_ORDER := ["equipment", "consumable", "material", "other"]
@@ -413,6 +413,15 @@ func build_level_card() -> PanelContainer:
 	if not equipped_title_name.is_empty():
 		box.add_child(make_label("🏅 " + equipped_title_name, 14, COLOR_HIGHLIGHT, false))
 
+	var hp := GameState.current_hp()
+	var max_hp := GameState.max_hp()
+	var hp_text := "❤ %d / %d PV" % [int(hp), int(max_hp)]
+
+	if hp < max_hp:
+		hp_text += " · pleins dans %s" % format_duration(int(player.get("health_view", {}).get("full_in_seconds", 0)))
+
+	box.add_child(make_label(hp_text, 13, UiStyle.COLOR_HP if hp >= max_hp else COLOR_MALUS, false))
+
 	var xp_bar := ProgressBar.new()
 	xp_bar.max_value = max(xp_needed, 1)
 	xp_bar.value = xp
@@ -424,6 +433,13 @@ func build_level_card() -> PanelContainer:
 	box.add_child(make_label("%d / %d XP avant le niveau %d" % [xp, xp_needed, level + 1], 12, COLOR_MUTED, false))
 
 	return card
+
+
+func format_duration(seconds: int) -> String:
+	if seconds < 60:
+		return "%d s" % seconds
+
+	return "%d min" % ceili(seconds / 60.0)
 
 
 func build_points_banner() -> PanelContainer:
@@ -783,7 +799,25 @@ func show_item_detail(item_id: String) -> void:
 	elif category == "consumable":
 		add_consumable_details(template.get("consumable", {}))
 
+		# Hors combat, seuls les soins s'utilisent : ils rendent les PV perdus.
+		if template.get("consumable", {}).get("effect_type", "") == "heal":
+			var use_button := make_button("Utiliser")
+			use_button.disabled = GameState.current_hp() >= GameState.max_hp()
+
+			if use_button.disabled:
+				use_button.text = "Utiliser (PV déjà au maximum)"
+
+			use_button.pressed.connect(func(): use_item(item_id))
+			content.add_child(use_button)
+
 	add_label("💰 Valeur : %d or" % int(template.get("base_value", 0)), 13, COLOR_MUTED)
+
+
+func use_item(item_id: String) -> void:
+	if await run_action("use_item", {"item_id": item_id}):
+		# player_changed a reconstruit le sac : on revient sur l'objet s'il en reste.
+		if int(GameState.player.get("inventory", {}).get(item_id, 0)) > 0:
+			show_item_detail(item_id)
 
 
 func add_consumable_details(consumable: Dictionary) -> void:

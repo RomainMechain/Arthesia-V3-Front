@@ -448,7 +448,20 @@ func _on_combat_message(data: Dictionary) -> void:
 		"combat_lost":
 			finish_combat()
 			add_log("💀 Tu es à terre.", COLOR_ERROR)
-			show_result("Défaite", COLOR_ERROR, ["Tu t'es fait terrasser. Renforce-toi et reviens !"])
+			var losses := PackedStringArray()
+
+			if int(data.get("xp_lost", 0)) > 0:
+				losses.append("-%d XP" % int(data.get("xp_lost", 0)))
+
+			if int(data.get("gold_lost", 0)) > 0:
+				losses.append("-%d or" % int(data.get("gold_lost", 0)))
+
+			show_result("Défaite", COLOR_ERROR, [
+				"Tu t'es fait terrasser. Renforce-toi et reviens !",
+				"Pertes : " + ", ".join(losses) if not losses.is_empty() else "",
+				"Tu te relèves avec peu de PV : repose-toi (plus vite en ville) ou soigne-toi.",
+			])
+			GameState.refresh_player()
 		"error":
 			add_log("⚠ " + str(data.get("message", "Erreur inconnue")), COLOR_HIGHLIGHT)
 
@@ -464,8 +477,9 @@ func on_combat_started(data: Dictionary) -> void:
 	var monster_max := float(data.get("monster_hp", 1))
 	set_monster_hp(monster_max, monster_max)
 
-	var player_max := float(data.get("player_hp", 1))
-	set_player_hp(player_max, player_max)
+	# Les PV perdus aux combats précédents ne sont pas forcément revenus.
+	var player_max := float(data.get("player_max_hp", data.get("player_hp", 1)))
+	set_player_hp(float(data.get("player_hp", player_max)), player_max)
 
 	player_mana.max_value = max(float(data.get("player_mana", 1)), 1.0)
 	set_mana(float(data.get("player_mana", 0)))
@@ -485,13 +499,31 @@ func on_combat_started(data: Dictionary) -> void:
 	add_log("Le combat contre %s commence !" % monster_name.text, COLOR_MUTED)
 
 
-func on_player_basic_attack(data: Dictionary) -> void:
-	var damage := float(data.get("final_damage", 0))
+# Texte d'un coup : esquivé, critique ou normal. Le serveur tire l'esquive
+# et le critique (dodged, critical) pour chaque coup.
+func hit_log_text(hit: Dictionary) -> String:
+	if hit.get("dodged", false):
+		return "esquivé"
 
+	var text := "%s dégâts" % format_number(float(hit.get("final_damage", 0)))
+	return text + " (critique !)" if hit.get("critical", false) else text
+
+
+func hit_floating_text(hit: Dictionary) -> String:
+	if hit.get("dodged", false):
+		return "Esquive"
+
+	var text := "-" + format_number(float(hit.get("final_damage", 0)))
+	return text + " !" if hit.get("critical", false) else text
+
+
+func on_player_basic_attack(data: Dictionary) -> void:
 	set_monster_hp(float(data.get("monster_hp", 0)), float(data.get("monster_max_hp", monster_hp.max_value)))
-	add_log("⚔ Tu frappes : %s dégâts" % format_number(damage))
-	spawn_floating_text("-" + format_number(damage), COLOR_DAMAGE_DEALT, monster_card)
-	flash(monster_card, Color(1.4, 0.8, 0.8))
+	add_log("⚔ Tu frappes : %s" % hit_log_text(data))
+	spawn_floating_text(hit_floating_text(data), COLOR_DAMAGE_DEALT, monster_card)
+
+	if not data.get("dodged", false):
+		flash(monster_card, Color(1.4, 0.8, 0.8))
 
 	var cooldown := float(data.get("next_ready_in", 0))
 	attack_cooldown_ms = max(int(cooldown * 1000), 1)
@@ -518,10 +550,11 @@ func on_player_skill_used(data: Dictionary) -> void:
 	for result in data.get("results", []):
 		match str(result.get("effect", "")):
 			"damage":
-				var damage := float(result.get("final_damage", 0))
-				details.append("%s dégâts" % format_number(damage))
-				spawn_floating_text("-" + format_number(damage), COLOR_DAMAGE_DEALT, monster_card)
-				flash(monster_card, Color(1.4, 0.8, 0.8))
+				details.append(hit_log_text(result))
+				spawn_floating_text(hit_floating_text(result), COLOR_DAMAGE_DEALT, monster_card)
+
+				if not result.get("dodged", false):
+					flash(monster_card, Color(1.4, 0.8, 0.8))
 			"heal":
 				var healed: float = max(0.0, player_hp.value - hp_before)
 				details.append("+%s PV" % format_number(healed) if healed > 0 else "PV déjà au maximum")
@@ -604,7 +637,6 @@ func on_monster_phase(data: Dictionary) -> void:
 
 
 func on_monster_attack(data: Dictionary) -> void:
-	var damage := float(data.get("final_damage", 0))
 	var absorbed := float(data.get("absorbed", 0))
 
 	if absorbed > 0:
@@ -615,12 +647,16 @@ func on_monster_attack(data: Dictionary) -> void:
 	if data.has("player_mana"):
 		set_mana(float(data["player_mana"]))
 
+	var attack_name := prettify_id(str(data.get("skill_id", "Attaque")))
+
+	if data.get("dodged", false):
+		add_log("💨 %s : tu esquives !" % attack_name, COLOR_MUTED)
+		spawn_floating_text("Esquive", COLOR_MUTED, player_card)
+		return
+
 	var absorbed_text := " (%s absorbés)" % format_number(absorbed) if absorbed > 0 else ""
-	add_log(
-		"🩸 %s : %s dégâts subis%s" % [prettify_id(str(data.get("skill_id", "Attaque"))), format_number(damage), absorbed_text],
-		COLOR_DAMAGE_TAKEN
-	)
-	spawn_floating_text("-" + format_number(damage), COLOR_DAMAGE_TAKEN, player_card)
+	add_log("🩸 %s : %s subis%s" % [attack_name, hit_log_text(data), absorbed_text], COLOR_DAMAGE_TAKEN)
+	spawn_floating_text(hit_floating_text(data), COLOR_DAMAGE_TAKEN, player_card)
 	flash(player_card, Color(1.5, 0.7, 0.7))
 
 
@@ -785,11 +821,23 @@ func _on_skill_pressed(skill_id: String) -> void:
 func _on_flee_pressed() -> void:
 	CombatClient.disconnect_from_combat()
 	back_requested.emit()
+	refresh_after_leaving()
+
+
+# Quitter un combat en cours : le serveur enregistre les PV restants à la
+# déconnexion, puis la carte les relit.
+func refresh_after_leaving() -> void:
+	if combat_finished:
+		return
+
+	await get_tree().create_timer(0.5).timeout
+	GameState.refresh_player()
 
 
 func _on_leave_pressed() -> void:
 	CombatClient.disconnect_from_combat()
 	back_requested.emit()
+	refresh_after_leaving()
 
 
 func _on_retry_pressed() -> void:
