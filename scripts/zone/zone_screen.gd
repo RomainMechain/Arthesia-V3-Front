@@ -557,19 +557,12 @@ func quest_subtitle(template: Dictionary) -> String:
 		"completed":
 			return "Terminée" + (" · répétable" if template.get("repeatable", false) else "")
 		"active":
-			var counters: Array = GameState.player.get("quests", {}).get(quest_id, {}).get("objectives_progress", [])
 			var done := 0
 
 			for index in objectives.size():
-				var objective: Dictionary = objectives[index]
-				var current := 0
+				var progress := GameState.quest_objective_progress(quest_id, objectives[index], index)
 
-				if objective.get("type", "") == "deliver_item":
-					current = int(GameState.player.get("inventory", {}).get(objective.get("item_id", ""), 0))
-				elif index < counters.size():
-					current = int(counters[index].get("current_count", 0))
-
-				if current >= int(objective.get("count", 1)):
+				if progress[0] >= progress[1]:
 					done += 1
 
 			if done == objectives.size():

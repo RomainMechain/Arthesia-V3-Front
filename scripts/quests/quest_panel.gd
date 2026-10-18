@@ -55,6 +55,10 @@ func load_names() -> void:
 				targets.append(["resource", str(objective.get("resource_id", ""))])
 			"deliver_item":
 				targets.append(["item", str(objective.get("item_id", ""))])
+			"zone":
+				var zone_id := str(objective.get("zone_id", ""))
+				var zone_res := await ApiClient.get_zone(zone_id)
+				names[zone_id] = zone_res.data.get("name", zone_id) if zone_res.ok else GameText.prettify_id(zone_id)
 
 	for reward in quest.get("rewards", {}).get("items", []):
 		targets.append(["item", str(reward.get("item_id", ""))])
@@ -78,21 +82,11 @@ func state() -> String:
 
 # Progression actuelle de chaque objectif : [actuel, requis].
 func objective_progress() -> Array:
-	var counters: Array = GameState.player.get("quests", {}).get(quest_id(), {}).get("objectives_progress", [])
 	var result: Array = []
 	var objectives: Array = quest.get("objectives", [])
 
 	for index in objectives.size():
-		var objective: Dictionary = objectives[index]
-		var required := int(objective.get("count", 1))
-		var current := 0
-
-		if objective.get("type", "") == "deliver_item":
-			current = int(GameState.player.get("inventory", {}).get(objective.get("item_id", ""), 0))
-		elif index < counters.size():
-			current = int(counters[index].get("current_count", 0))
-
-		result.append([mini(current, required), required])
+		result.append(GameState.quest_objective_progress(quest_id(), objectives[index], index))
 
 	return result
 
@@ -116,6 +110,10 @@ func describe_objective(objective: Dictionary) -> String:
 			return "Récolter " + display_name(str(objective.get("resource_id", "")))
 		"deliver_item":
 			return "Apporter " + display_name(str(objective.get("item_id", "")))
+		"level":
+			return "Atteindre le niveau %d" % int(objective.get("min", 1))
+		"zone":
+			return "Découvrir " + display_name(str(objective.get("zone_id", "")))
 		_:
 			return GameText.prettify_id(str(objective.get("type", "")))
 
@@ -326,6 +324,10 @@ func run_quest_action(action: String) -> void:
 	match action:
 		"start_quest":
 			message_lines = ["📜 Quête acceptée !", "Ta progression s'affiche ici et dans le journal de quêtes."]
+
+			# Une quête active peut ouvrir une zone.
+			for unlock in res.data.get("newly_unlocked", []):
+				message_lines.append(await GameState.describe_unlock(str(unlock)))
 		"abandon_quest":
 			message_lines = ["Quête abandonnée."]
 		"turn_in_quest":

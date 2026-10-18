@@ -21,6 +21,8 @@ const TOKEN_URL := "https://securetoken.googleapis.com/v1/token?key=%s"
 
 # Le jeton est renouvelé un peu avant son expiration.
 const REFRESH_MARGIN_SECONDS := 120
+# Délai d'une requête à Firebase avant d'abandonner.
+const REQUEST_TIMEOUT_SECONDS := 20.0
 
 const ERROR_MESSAGES := {
 	"EMAIL_EXISTS": "Un compte existe déjà avec cet e-mail.",
@@ -213,7 +215,21 @@ func _post_form(url: String, body: String) -> Dictionary:
 
 func _post(url: String, headers: PackedStringArray, body: String) -> Dictionary:
 	var http := HTTPRequest.new()
+	# Sans délai, une requête sans réponse bloquerait le démarrage pour toujours.
+	http.timeout = REQUEST_TIMEOUT_SECONDS
 	add_child(http)
+
+	# Godot se connecte à la première adresse du nom, souvent IPv6. Sur un
+	# réseau où IPv6 est annoncé mais ne passe pas, la requête n'aboutit jamais.
+	# On s'adresse donc à l'adresse IPv4 de Firebase, en gardant le nom pour
+	# l'en-tête Host et pour le TLS (SNI et vérification du certificat).
+	var host := url.get_slice("://", 1).get_slice("/", 0)
+	var ipv4 := IP.resolve_hostname(host, IP.TYPE_IPV4)
+
+	if not ipv4.is_empty():
+		headers.append("Host: " + host)
+		http.set_tls_options(TLSOptions.client(null, host))
+		url = url.replace("://" + host, "://" + ipv4)
 
 	if http.request(url, headers, HTTPClient.METHOD_POST, body) != OK:
 		http.queue_free()

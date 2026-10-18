@@ -158,6 +158,29 @@ func quest_state(quest_id: String) -> String:
 	return str(player.get("quests", {}).get(quest_id, {}).get("state", ""))
 
 
+# Progression d'un objectif de quête active : [actuel, requis]. Même règle que
+# game_rules.quest_progress_view côté serveur.
+func quest_objective_progress(quest_id: String, objective: Dictionary, index: int) -> Array:
+	var counters: Array = player.get("quests", {}).get(quest_id, {}).get("objectives_progress", [])
+	var required := int(objective.get("count", 1))
+	var current := 0
+
+	match objective.get("type", ""):
+		"deliver_item":
+			current = int(player.get("inventory", {}).get(objective.get("item_id", ""), 0))
+		"level":
+			required = int(objective.get("min", 1))
+			current = int(player.get("level", 1))
+		"zone":
+			required = 1
+			current = 1 if player.get("unlocks", {}).get("zones", []).has(objective.get("zone_id", "")) else 0
+		_:
+			if index < counters.size():
+				current = int(counters[index].get("current_count", 0))
+
+	return [mini(current, required), required]
+
+
 # Explique une condition de déblocage, ligne par ligne : [[texte, remplie], ...].
 # Les groupes sont aplatis avec une ligne d'introduction (remplie = null).
 func describe_condition(condition) -> Array:

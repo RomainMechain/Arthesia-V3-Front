@@ -72,7 +72,7 @@ const SLOT_LABELS := {
 }
 
 # Mêmes limites que MAX_ACTIVE_SKILL_SLOTS / MAX_PASSIVE_SKILL_SLOTS côté serveur.
-const MAX_ACTIVE_SKILLS := 8
+const MAX_ACTIVE_SKILLS := 4
 const MAX_PASSIVE_SKILLS := 4
 
 const COLOR_CARD := UiStyle.COLOR_CARD
