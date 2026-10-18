@@ -101,6 +101,17 @@ func describe_quest_progress(update: Dictionary) -> String:
 	return "📜 %s : %d / %d" % [quest_name, int(update.get("current", 0)), int(update.get("count", 0))]
 
 
+# Nom du titre équipé par le joueur courant ("" sans titre).
+func equipped_title_name() -> String:
+	var title_id = player.get("titles", {}).get("equipped")
+
+	if title_id == null or str(title_id).is_empty():
+		return ""
+
+	var res := await ApiClient.get_template("title", str(title_id))
+	return str(res.data.get("name", title_id)) if res.ok else GameText.prettify_id(str(title_id))
+
+
 # État d'une quête pour le joueur courant : "", "active" ou "completed".
 func quest_state(quest_id: String) -> String:
 	return str(player.get("quests", {}).get(quest_id, {}).get("state", ""))
@@ -221,7 +232,7 @@ func describe_unlock(unlock: String) -> String:
 			return "🗺 Nouvelle zone : " + GameText.prettify_id(id)
 		"skill", "title":
 			var res := await ApiClient.get_template(kind, id)
-			var label := "📖 Nouveau talent : " if kind == "skill" else "🏅 Nouveau titre : "
+			var label := "📖 Nouvelle compétence : " if kind == "skill" else "🏅 Nouveau titre : "
 			return label + (str(res.data.get("name", id)) if res.ok else GameText.prettify_id(id))
 		_:
 			return "🔓 " + unlock

@@ -5,7 +5,8 @@ extends Control
 # * Stats : niveau, XP, or et répartition des points de statistiques ;
 # * Sac : inventaire groupé par catégorie, fiche détail, équiper un objet ;
 # * Équipement : les 8 emplacements, équiper, changer ou retirer ;
-# * Talents : compétences actives et passives équipées ou disponibles.
+# * Compétences : titres, puis compétences actives et passives équipées ou
+#   disponibles.
 #
 # Le contenu des onglets est construit en code dans Content. Il est
 # reconstruit à chaque changement du joueur (GameState.player_changed).
@@ -112,6 +113,10 @@ var is_submitting := false
 
 var item_templates: Dictionary = {}
 var skill_templates: Dictionary = {}
+var title_templates: Dictionary = {}
+# Titres verrouillés : title_id -> lignes [texte, remplie] de leur condition.
+var title_conditions: Dictionary = {}
+var equipped_title_name := ""
 
 # Incrémenté à chaque rendu : un chargement encore en cours pour un ancien
 # rendu (autre onglet, joueur rechargé) ne doit pas écraser l'affichage.
@@ -128,8 +133,9 @@ func _ready() -> void:
 	confirm_button.pressed.connect(submit_allocation)
 	GameState.player_changed.connect(_on_player_changed)
 
+	# 13 px : les quatre onglets tiennent sur la largeur d'un téléphone.
 	for tab in [stats_tab, inventory_tab, equipment_tab, skills_tab]:
-		tab.add_theme_font_size_override("font_size", 14)
+		tab.add_theme_font_size_override("font_size", 13)
 
 	show_tab("stats")
 
@@ -189,6 +195,15 @@ func make_label(text: String, font_size := 0, color = null, wrap := true) -> Lab
 	if color != null:
 		label.add_theme_color_override("font_color", color)
 
+	return label
+
+
+# Label d'une colonne extensible : raccourci (…) quand la place manque, au
+# lieu d'élargir l'écran au-delà de celui du téléphone. À ne pas utiliser sur
+# un label sans place réservée, qui disparaîtrait.
+func make_shrinkable_label(text: String, font_size := 0, color = null) -> Label:
+	var label := make_label(text, font_size, color, false)
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	return label
 
 
@@ -264,6 +279,7 @@ func run_action(action: String, body: Dictionary) -> bool:
 
 func refresh_stats(id: int) -> void:
 	var res := await ApiClient.get_player_stats(GameState.player_id)
+	equipped_title_name = await GameState.equipped_title_name()
 
 	if id != render_id:
 		return
@@ -384,6 +400,9 @@ func build_level_card() -> PanelContainer:
 	top.add_child(make_label("💰 %d or" % int(player.get("currency", {}).get("or", 0)), 16, COLOR_HIGHLIGHT, false))
 	box.add_child(top)
 
+	if not equipped_title_name.is_empty():
+		box.add_child(make_label("🏅 " + equipped_title_name, 14, COLOR_HIGHLIGHT, false))
+
 	var xp_bar := ProgressBar.new()
 	xp_bar.max_value = max(xp_needed, 1)
 	xp_bar.value = xp
@@ -404,8 +423,8 @@ func build_points_banner() -> PanelContainer:
 
 	var text_box := VBoxContainer.new()
 	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text_box.add_child(make_label("Points à répartir", 16, null, false))
-	text_box.add_child(make_label("Maintiens + pour en ajouter plusieurs", 12, COLOR_MUTED, false))
+	text_box.add_child(make_shrinkable_label("Points à répartir", 16))
+	text_box.add_child(make_shrinkable_label("Maintiens + pour en ajouter plusieurs", 12, COLOR_MUTED))
 	row.add_child(text_box)
 
 	points_label = make_label("0", 28, COLOR_HIGHLIGHT, false)
@@ -425,14 +444,13 @@ func build_stat_card(stat: String, value: float, value_per_point: float, spent_p
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_theme_constant_override("separation", 0)
-	info.add_child(make_label(STAT_NAMES[stat], 16, null, false))
-	info.add_child(make_label(STAT_HINTS[stat], 11, COLOR_MUTED, false))
+	info.add_child(make_shrinkable_label(STAT_NAMES[stat], 16))
+	info.add_child(make_shrinkable_label(STAT_HINTS[stat], 11, COLOR_MUTED))
 	info.add_child(
-		make_label(
+		make_shrinkable_label(
 			"%d pts · +%s %s/pt" % [spent_points, format_number(value_per_point), STAT_LABELS[stat]],
 			11,
-			COLOR_MUTED,
-			false
+			COLOR_MUTED
 		)
 	)
 	row.add_child(info)
@@ -985,22 +1003,52 @@ func show_slot_picker(slot: String) -> void:
 		content.add_child(build_equip_candidate_card(item_id))
 
 
-# --- Onglet Talents --------------------------------------------------------
+# --- Onglet Compétences -------------------------------------------------------
 
 func refresh_skills(id: int) -> void:
 	clear_content()
-	add_label("Chargement des talents...", 0, COLOR_MUTED)
+	add_label("Chargement des compétences...", 0, COLOR_MUTED)
 
 	var skills: Dictionary = GameState.player.get("skills", {})
 
 	if not await ensure_skill_templates(skills.get("unlocked", []), id):
 		return
 
+	if not await load_titles(id):
+		return
+
 	render_skills()
+
+
+# Charge tous les titres du jeu, et la condition des titres encore verrouillés.
+func load_titles(id: int) -> bool:
+	var res := await ApiClient.get_content("/content/templates/title")
+
+	if not res.ok:
+		return id == render_id
+
+	var unlocked: Array = GameState.player.get("titles", {}).get("unlocked", [])
+
+	for summary in res.data:
+		var title_id := str(summary.get("id", ""))
+
+		if not title_templates.has(title_id):
+			var detail := await ApiClient.get_template("title", title_id)
+			title_templates[title_id] = detail.data if detail.ok else summary
+
+		if not unlocked.has(title_id):
+			title_conditions[title_id] = await GameState.describe_condition(title_templates[title_id].get("unlock_condition"))
+
+		if id != render_id:
+			return false
+
+	return true
 
 
 func render_skills() -> void:
 	clear_content()
+
+	add_titles_section()
 
 	var skills: Dictionary = GameState.player.get("skills", {})
 	var unlocked: Array = skills.get("unlocked", [])
@@ -1008,9 +1056,10 @@ func render_skills() -> void:
 	var equipped_passive: Array = skills.get("equipped_passive", [])
 
 	if unlocked.is_empty():
+		add_section_title("⚔ Compétences")
 		add_label(
-			"Aucun talent débloqué pour l'instant. Combats et explore pour en apprendre.",
-			0,
+			"Aucune compétence débloquée pour l'instant. Combats et explore pour en apprendre.",
+			13,
 			COLOR_MUTED
 		)
 		return
@@ -1040,10 +1089,105 @@ func render_skills() -> void:
 	add_section_title("📖 Disponibles  (%d)" % available.size())
 
 	if available.is_empty():
-		add_label("Tous tes talents sont équipés.", 13, COLOR_MUTED)
+		add_label("Toutes tes compétences sont équipées.", 13, COLOR_MUTED)
 
 	for skill_id in available:
 		content.add_child(build_skill_card(skill_id, false))
+
+
+# --- Titres -----------------------------------------------------------------
+
+func add_titles_section() -> void:
+	var titles: Dictionary = GameState.player.get("titles", {})
+	var unlocked: Array = titles.get("unlocked", [])
+	var equipped = titles.get("equipped")
+
+	add_section_title("🏅 Titres  (%d / %d)" % [unlocked.size(), title_templates.size()])
+	add_label("Un seul titre peut être porté à la fois ; ses effets s'appliquent en permanence.", 12, COLOR_MUTED)
+
+	var ids: Array = title_templates.keys()
+	# Le titre porté d'abord, puis les titres débloqués, puis les autres.
+	ids.sort_custom(
+		func(a, b):
+			var rank_a := 0 if a == equipped else (1 if unlocked.has(a) else 2)
+			var rank_b := 0 if b == equipped else (1 if unlocked.has(b) else 2)
+			if rank_a != rank_b:
+				return rank_a < rank_b
+			return str(title_templates[a].get("name", a)).naturalnocasecmp_to(str(title_templates[b].get("name", b))) < 0
+	)
+
+	if ids.is_empty():
+		add_label("Aucun titre n'existe encore.", 13, COLOR_MUTED)
+
+	for title_id in ids:
+		if unlocked.has(title_id):
+			content.add_child(build_title_card(title_id, title_id == equipped))
+		else:
+			content.add_child(build_locked_title_card(title_id))
+
+
+func build_title_card(title_id: String, is_equipped: bool) -> PanelContainer:
+	var title: Dictionary = title_templates.get(title_id, {})
+	var card := make_card(COLOR_CARD_HIGHLIGHT if is_equipped else COLOR_CARD)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	card.add_child(box)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	box.add_child(row)
+
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_theme_constant_override("separation", 1)
+	info.add_child(make_label(str(title.get("name", title_id)), 16))
+	info.add_child(make_label("Porté" if is_equipped else "Débloqué", 12, COLOR_HIGHLIGHT if is_equipped else COLOR_MUTED))
+	row.add_child(info)
+
+	var button := make_button("Retirer" if is_equipped else "Porter", 84)
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	if is_equipped:
+		button.pressed.connect(func(): run_action("unequip_title", {}))
+	else:
+		button.pressed.connect(func(): run_action("equip_title", {"title_id": title_id}))
+
+	row.add_child(button)
+
+	var effects := describe_skill_effects(title)
+
+	if not effects.is_empty():
+		box.add_child(make_label(effects, 13, COLOR_BONUS))
+
+	var description: String = title.get("description", "")
+
+	if not description.is_empty():
+		box.add_child(make_label(description, 12, COLOR_MUTED))
+
+	return card
+
+
+func build_locked_title_card(title_id: String) -> PanelContainer:
+	var title: Dictionary = title_templates.get(title_id, {})
+	var card := make_card(Color(0.13, 0.13, 0.14))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 3)
+	card.add_child(box)
+
+	box.add_child(make_label("🔒 " + str(title.get("name", title_id)), 15, COLOR_MUTED))
+
+	var effects := describe_skill_effects(title)
+
+	if not effects.is_empty():
+		box.add_child(make_label(effects, 12, COLOR_MUTED))
+
+	for line in title_conditions.get(title_id, []):
+		if line[1] == null:
+			box.add_child(make_label(str(line[0]), 12, COLOR_MUTED))
+		else:
+			box.add_child(make_label(("✓ " if line[1] else "✗ ") + str(line[0]), 12, COLOR_BONUS if line[1] else COLOR_MUTED))
+
+	return card
 
 
 func build_skill_card(skill_id: String, is_equipped: bool) -> PanelContainer:

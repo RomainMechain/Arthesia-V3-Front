@@ -149,6 +149,13 @@ theme_override_font_sizes/font_size = 15
 text = "Niveau 1"
 text_overrun_behavior = 3
 
+[node name="PlayerTitle" type="Label" parent="BottomBar/Row/PlayerBox"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
+theme_override_font_sizes/font_size = 11
+text_overrun_behavior = 3
+
 [node name="XpBar" type="ProgressBar" parent="BottomBar/Row/PlayerBox"]
 custom_minimum_size = Vector2(0, 6)
 layout_mode = 2

@@ -56,6 +56,7 @@ const TYPE_LABELS := {
 @onready var sheet_box: VBoxContainer = $ZoneSheet/SheetBox
 @onready var bottom_bar: PanelContainer = $BottomBar
 @onready var player_level: Label = $BottomBar/Row/PlayerBox/PlayerLevel
+@onready var player_title: Label = $BottomBar/Row/PlayerBox/PlayerTitle
 @onready var xp_bar: ProgressBar = $BottomBar/Row/PlayerBox/XpBar
 @onready var player_gold: Label = $BottomBar/Row/PlayerBox/PlayerGold
 @onready var craft_button: Button = $BottomBar/Row/CraftButton
@@ -76,6 +77,7 @@ var map_bounds := Rect2()
 var ready_quest_zones: Dictionary = {}
 var ready_quest_count := 0
 var xp_to_next_level := 0
+var equipped_title_name := ""
 
 var selected_zone: Dictionary = {}
 var sheet_id := 0
@@ -194,6 +196,8 @@ func refresh_meta() -> void:
 	if stats_res.ok:
 		xp_to_next_level = int(stats_res.data.get("xp_to_next_level", 0))
 
+	equipped_title_name = await GameState.equipped_title_name()
+
 	update_hud()
 	update_floor_header()
 
@@ -247,6 +251,8 @@ func update_hud() -> void:
 	var xp := int(player.get("xp", 0))
 
 	player_level.text = "Niveau %d" % level
+	player_title.text = "🏅 " + equipped_title_name
+	player_title.visible = not equipped_title_name.is_empty()
 	xp_bar.max_value = max(xp_to_next_level, 1)
 	xp_bar.value = xp
 	xp_bar.tooltip_text = "%d / %d XP" % [xp, xp_to_next_level]
