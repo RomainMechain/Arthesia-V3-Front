@@ -16,6 +16,13 @@ const COLOR_ERROR := UiStyle.COLOR_ERROR
 const COLOR_DAMAGE_DEALT := Color(1.0, 0.85, 0.4)
 const COLOR_DAMAGE_TAKEN := Color(1.0, 0.45, 0.4)
 const COLOR_SHIELD := Color(0.55, 0.75, 1.0)
+const COLOR_TELEGRAPH := Color(1.0, 0.6, 0.2)
+
+# Parade de chaque attaque télégraphiée : texte du bandeau d'annonce.
+const COUNTER_LABELS := {
+	"esquive": "ESQUIVE !",
+	"interruption": "INTERROMPS-LA avec une compétence !",
+}
 
 const ROLE_LABELS := {
 	"elite": "⭐ Élite",
@@ -85,6 +92,17 @@ var effects_refresh := 0.0
 var phase := 0
 var phase_count := 0
 
+# Attaque télégraphiée en cours d'annonce (vide sinon) et moment où elle frappe.
+var pending_attack: Dictionary = {}
+var pending_hits_at := 0
+var pending_duration_ms := 1
+var dodge_ready_at := 0
+var dodge_cooldown_ms := 8000
+var telegraph_box: VBoxContainer
+var telegraph_label: Label
+var telegraph_bar: ProgressBar
+var dodge_button: Button
+
 
 func _ready() -> void:
 	for card in [monster_card, player_card, log_card]:
@@ -105,9 +123,48 @@ func _ready() -> void:
 	leave_button.pressed.connect(_on_leave_pressed)
 	retry_button.pressed.connect(_on_retry_pressed)
 
+	build_telegraph_widgets()
+
 	CombatClient.connected.connect(_on_combat_connected)
 	CombatClient.disconnected.connect(_on_combat_disconnected)
 	CombatClient.message_received.connect(_on_combat_message)
+
+
+# Bandeau d'annonce (dans la carte du monstre) et bouton Esquiver (sous
+# l'attaque), créés en code et cachés tant qu'ils ne servent pas.
+func build_telegraph_widgets() -> void:
+	telegraph_box = VBoxContainer.new()
+	telegraph_box.visible = false
+	monster_card.get_node("Box").add_child(telegraph_box)
+
+	telegraph_label = Label.new()
+	telegraph_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	telegraph_label.add_theme_color_override("font_color", COLOR_TELEGRAPH)
+	telegraph_label.add_theme_font_size_override("font_size", 14)
+	telegraph_box.add_child(telegraph_label)
+
+	telegraph_bar = ProgressBar.new()
+	telegraph_bar.custom_minimum_size = Vector2(0, 6)
+	telegraph_bar.show_percentage = false
+	telegraph_bar.max_value = 1.0
+	UiStyle.style_bar(telegraph_bar, COLOR_TELEGRAPH)
+	telegraph_box.add_child(telegraph_bar)
+
+	dodge_button = Button.new()
+	dodge_button.custom_minimum_size = Vector2(0, 40)
+	dodge_button.text = "💨 Esquiver"
+	dodge_button.visible = false
+	dodge_button.pressed.connect(_on_dodge_pressed)
+	attack_cooldown.get_parent().add_child(dodge_button)
+	attack_cooldown.get_parent().move_child(dodge_button, attack_cooldown.get_index() + 1)
+
+
+func has_dodgeable_attack() -> bool:
+	for move in monster_template.get("moveset", []):
+		if str(move.get("avoidable_by", "")) == "esquive" and float(move.get("telegraph_seconds", 0)) > 0:
+			return true
+
+	return false
 
 
 # Appelé par l'écran de zone. monster_data est le template du monstre s'il
@@ -302,12 +359,26 @@ func _process(delta: float) -> void:
 	for item_id in item_slots:
 		update_item_button(item_id, now)
 
+	update_telegraph(now)
+
 	# Les durées des effets défilent localement, 4 fois par seconde.
 	effects_refresh += delta
 
 	if effects_refresh >= 0.25:
 		effects_refresh = 0.0
 		render_effects()
+
+
+func update_telegraph(now: int) -> void:
+	telegraph_box.visible = not pending_attack.is_empty()
+
+	if telegraph_box.visible:
+		var left: int = max(0, pending_hits_at - now)
+		telegraph_bar.value = float(left) / float(pending_duration_ms)
+
+	var dodge_left: int = max(0, dodge_ready_at - now)
+	dodge_button.disabled = dodge_left > 0
+	dodge_button.text = "💨 Esquiver  ·  %.1f s" % (dodge_left / 1000.0) if dodge_left > 0 else "💨 Esquiver"
 
 
 func update_skill_button(skill_id: String, now: int) -> void:
@@ -424,6 +495,10 @@ func _on_combat_message(data: Dictionary) -> void:
 			on_player_skill_used(data)
 		"monster_attack":
 			on_monster_attack(data)
+		"monster_telegraph":
+			on_monster_telegraph(data)
+		"player_dodge":
+			on_player_dodge(data)
 		"player_item_used":
 			on_player_item_used(data)
 		"passive_triggered":
@@ -489,6 +564,9 @@ func on_combat_started(data: Dictionary) -> void:
 	attack_cooldown_ms = int(float(data.get("basic_attack_cooldown", 1)) * 1000)
 	skill_ready_at.clear()
 	item_ready_at = 0
+	pending_attack = {}
+	dodge_ready_at = 0
+	dodge_button.visible = has_dodgeable_attack()
 
 	phase = int(data.get("phase", 0)) if data.get("phase") != null else 0
 	phase_count = int(data.get("phase_count", 0)) if data.get("phase_count") != null else 0
@@ -577,6 +655,12 @@ func on_player_skill_used(data: Dictionary) -> void:
 
 	skill_ready_at[skill_id] = Time.get_ticks_msec() + int(float(data.get("next_ready_in", 0)) * 1000)
 
+	if data.get("interrupted") != null:
+		var interrupted := prettify_id(str(data["interrupted"]))
+		add_log("✋ Tu interromps %s !" % interrupted, COLOR_BONUS)
+		spawn_floating_text("Interrompu !", COLOR_BONUS, monster_card)
+		pending_attack = {}
+
 
 func describe_effect_result(result: Dictionary) -> String:
 	var stat := str(result.get("stat", "")).to_upper()
@@ -636,7 +720,35 @@ func on_monster_phase(data: Dictionary) -> void:
 	spawn_floating_text("Phase %d !" % phase, COLOR_HIGHLIGHT, monster_card)
 
 
+# Une grosse attaque s'annonce : le joueur a quelques secondes pour la parer.
+func on_monster_telegraph(data: Dictionary) -> void:
+	pending_attack = data
+	pending_duration_ms = max(1, int(float(data.get("seconds", 1)) * 1000))
+	pending_hits_at = Time.get_ticks_msec() + int(float(data.get("remaining", data.get("seconds", 1))) * 1000)
+
+	var attack_name := prettify_id(str(data.get("skill_id", "Attaque")))
+	var counter := str(data.get("avoidable_by", ""))
+	telegraph_label.text = "⚠ %s arrive — %s" % [attack_name, COUNTER_LABELS.get(counter, "encaisse le coup !")]
+	add_log("⚠ %s se prépare…" % attack_name, COLOR_TELEGRAPH)
+	flash(monster_card, Color(1.6, 1.1, 0.6))
+
+
+func on_player_dodge(data: Dictionary) -> void:
+	dodge_ready_at = Time.get_ticks_msec() + int(float(data.get("next_ready_in", 8)) * 1000)
+
+	if not data.get("useful", false):
+		add_log("💨 Esquive dans le vide…", COLOR_MUTED)
+
+
 func on_monster_attack(data: Dictionary) -> void:
+	if data.get("telegraphed", false):
+		pending_attack = {}
+
+	if str(data.get("avoided", "")) == "esquive":
+		add_log("💨 Tu esquives %s !" % prettify_id(str(data.get("skill_id", "l'attaque"))), COLOR_BONUS)
+		spawn_floating_text("Esquivé !", COLOR_BONUS, player_card)
+		return
+
 	var absorbed := float(data.get("absorbed", 0))
 
 	if absorbed > 0:
@@ -663,6 +775,18 @@ func on_monster_attack(data: Dictionary) -> void:
 func apply_status(status: Dictionary) -> void:
 	last_status = status
 	status_received_at = Time.get_ticks_msec()
+
+	# Le serveur fait foi pour l'annonce en cours et la recharge de l'esquive.
+	var pending = status.get("monster_pending")
+
+	if pending == null:
+		pending_attack = {}
+	elif not pending_attack.is_empty():
+		pending_hits_at = status_received_at + int(float(pending.get("remaining", 0)) * 1000)
+
+	if status.has("dodge_ready_in"):
+		dodge_ready_at = status_received_at + int(float(status["dodge_ready_in"]) * 1000)
+		dodge_cooldown_ms = int(float(status.get("dodge_cooldown", 8)) * 1000)
 
 	# Les buffs d'agilité et de sagesse changent les cadences.
 	mana_regen = float(status.get("player_mana_regen", mana_regen))
@@ -751,6 +875,9 @@ func finish_combat() -> void:
 	for item_id in item_slots:
 		item_slots[item_id].button.disabled = true
 
+	pending_attack = {}
+	telegraph_box.visible = false
+	dodge_button.disabled = true
 	last_status = {}
 	render_effects()
 
@@ -811,6 +938,11 @@ func show_victory(data: Dictionary) -> void:
 func _on_attack_pressed() -> void:
 	if in_combat:
 		CombatClient.basic_attack()
+
+
+func _on_dodge_pressed() -> void:
+	if in_combat:
+		CombatClient.dodge()
 
 
 func _on_skill_pressed(skill_id: String) -> void:

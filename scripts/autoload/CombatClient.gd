@@ -107,6 +107,14 @@ func use_skill(skill_id: String) -> void:
 	print("Compétence envoyée : ", skill_id)
 
 
+# Esquive l'attaque annoncée dont la parade est l'esquive (recharge côté serveur).
+func dodge() -> void:
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+
+	socket.send_text(JSON.stringify({"action": "dodge"}))
+
+
 func use_item(item_id: String) -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		print("Impossible d'utiliser l'objet : WebSocket non connecté")
