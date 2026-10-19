@@ -124,18 +124,29 @@ func _ready() -> void:
 	retry_button.pressed.connect(_on_retry_pressed)
 
 	build_telegraph_widgets()
+	compact_layout()
 
 	CombatClient.connected.connect(_on_combat_connected)
 	CombatClient.disconnected.connect(_on_combat_disconnected)
 	CombatClient.message_received.connect(_on_combat_message)
 
 
-# Bandeau d'annonce (dans la carte du monstre) et bouton Esquiver (sous
-# l'attaque), créés en code et cachés tant qu'ils ne servent pas.
+# Bandeau d'annonce et bouton Esquiver, créés en code. Le bandeau s'affiche
+# par-dessus le haut du journal (un PanelContainer superpose ses enfants) :
+# l'écran ne change pas de hauteur pendant une annonce. Esquiver partage la
+# ligne de l'attaque.
 func build_telegraph_widgets() -> void:
+	var banner := PanelContainer.new()
+	banner.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	banner.add_theme_stylebox_override("panel", UiStyle.card_style(Color(0.25, 0.12, 0.05)))
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	log_card.add_child(banner)
+
 	telegraph_box = VBoxContainer.new()
 	telegraph_box.visible = false
-	monster_card.get_node("Box").add_child(telegraph_box)
+	telegraph_box.visibility_changed.connect(func(): banner.visible = telegraph_box.visible)
+	banner.visible = false
+	banner.add_child(telegraph_box)
 
 	telegraph_label = Label.new()
 	telegraph_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -150,13 +161,48 @@ func build_telegraph_widgets() -> void:
 	UiStyle.style_bar(telegraph_bar, COLOR_TELEGRAPH)
 	telegraph_box.add_child(telegraph_bar)
 
+	var attack_row := HBoxContainer.new()
+	attack_row.add_theme_constant_override("separation", 6)
+	var layout := attack_button.get_parent()
+	layout.add_child(attack_row)
+	layout.move_child(attack_row, attack_button.get_index())
+	attack_button.reparent(attack_row)
+	attack_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
 	dodge_button = Button.new()
-	dodge_button.custom_minimum_size = Vector2(0, 40)
+	dodge_button.custom_minimum_size = Vector2(118, 0)
+	dodge_button.add_theme_font_size_override("font_size", 14)
 	dodge_button.text = "💨 Esquiver"
 	dodge_button.visible = false
 	dodge_button.pressed.connect(_on_dodge_pressed)
-	attack_cooldown.get_parent().add_child(dodge_button)
-	attack_cooldown.get_parent().move_child(dodge_button, attack_cooldown.get_index() + 1)
+	attack_row.add_child(dodge_button)
+
+
+# Regroupe sur une ligne les textes qui en prenaient deux, pour que tout
+# l'écran tienne en 360 × 640.
+func compact_layout() -> void:
+	get_node("Layout").add_theme_constant_override("separation", 6)
+	attack_button.custom_minimum_size.y = 48
+	attack_button.add_theme_font_size_override("font_size", 16)
+
+	# Niveau du monstre à gauche, ses PV à droite.
+	var monster_line := HBoxContainer.new()
+	monster_level.get_parent().add_child(monster_line)
+	monster_level.get_parent().move_child(monster_line, monster_level.get_index())
+	monster_level.reparent(monster_line)
+	monster_level.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	monster_hp_label.reparent(monster_line)
+	monster_hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+	# PV et mana du joueur sur la même ligne, sous les deux barres.
+	var player_line := HBoxContainer.new()
+	var player_box := player_mana.get_parent()
+	player_box.add_child(player_line)
+	player_box.move_child(player_line, player_mana.get_index() + 1)
+	player_hp_label.reparent(player_line)
+	player_hp_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	player_mana_label.reparent(player_line)
+	player_mana_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 
 func has_dodgeable_attack() -> bool:
@@ -219,7 +265,7 @@ func build_skill_buttons() -> void:
 		var template: Dictionary = res.data if res.ok else {}
 
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(0, 52)
+		button.custom_minimum_size = Vector2(0, 46)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.clip_text = true
 		button.add_theme_font_size_override("font_size", 13)
@@ -249,10 +295,10 @@ func build_item_buttons() -> void:
 			continue
 
 		var button := Button.new()
-		button.custom_minimum_size = Vector2(0, 40)
+		button.custom_minimum_size = Vector2(0, 36)
 		button.add_theme_font_size_override("font_size", 12)
 		button.disabled = true
-		button.tooltip_text = describe_consumable(res.data)
+		button.tooltip_text = "%s : %s" % [res.data.get("name", item_id), describe_consumable(res.data)]
 		button.pressed.connect(func(): _on_item_pressed(item_id))
 		items_bar.add_child(button)
 
@@ -304,7 +350,9 @@ func update_item_button(item_id: String, now: int) -> void:
 	if left > 0:
 		button.text = "%s ⏳ %.1f s" % [consumable_icon(item), left / 1000.0]
 	else:
-		button.text = "%s %s ×%d" % [consumable_icon(item), item.get("name", item_id), int(slot.count)]
+		# Le nom complet est dans l'infobulle : le bouton garde son premier mot.
+		var short_name := str(item.get("name", item_id)).get_slice(" ", 0)
+		button.text = "%s %s ×%d" % [consumable_icon(item), short_name, int(slot.count)]
 
 	# Comme le serveur : pas de soin à PV pleins, pas de mana à mana plein.
 	var wasted := (

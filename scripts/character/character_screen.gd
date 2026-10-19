@@ -1309,6 +1309,18 @@ func describe_condition(condition) -> String:
 			return "sous condition"
 
 
+# Effet d'une compétence : part fixe + coefficient de la stat (voir
+# combat_engine.apply_skill_effects), par exemple « 10 + 0,48 × ATK ».
+func scaling_text(effect: Dictionary, power_key: String, stat: String) -> String:
+	var base := float(effect.get("base", 0))
+	var power := format_number(float(effect.get(power_key, 0))) + " × " + stat
+
+	if base > 0:
+		return "%s + %s" % [format_number(base), power]
+
+	return power
+
+
 func describe_skill_effects(skill: Dictionary) -> String:
 	var parts := PackedStringArray()
 
@@ -1322,11 +1334,18 @@ func describe_skill_effects(skill: Dictionary) -> String:
 
 		match effect.get("type", ""):
 			"damage":
-				parts.append("Dégâts : %s × %s" % [format_number(float(effect.get("power", 0))), damage_stat])
+				if skill.get("damage_type", "") == "hybrid":
+					# Même règle que combat_engine.skill_damage_stat : 2 × la plus faible.
+					var doubled: Dictionary = effect.duplicate()
+					doubled["power"] = float(effect.get("power", 0)) * 2
+					parts.append("Dégâts : " + scaling_text(doubled, "power", "la plus faible d'ATK et d'INT"))
+				else:
+					parts.append("Dégâts : " + scaling_text(effect, "power", damage_stat))
 			"heal":
-				parts.append("Soin : %s × INT" % format_number(float(effect.get("power", 0))))
+				parts.append("Soin : " + scaling_text(effect, "power", "SAG"))
 			"shield":
-				parts.append("Bouclier ×%s%s" % [format_number(float(effect.get("amount_power", 0))), duration_text])
+				var shield_stat := "ATK" if skill.get("damage_type", "") == "physical" else "SAG"
+				parts.append("Bouclier : " + scaling_text(effect, "amount_power", shield_stat) + duration_text)
 			"stat_bonus":
 				parts.append("%s +%s" % [stat_label, format_number(float(effect.get("amount", 0)))])
 			"stat_bonus_percent":
