@@ -11,6 +11,7 @@ const ZONE_NODE_SCENE := preload("res://scene/map/ZoneNode.tscn")
 const ZONE_SCREEN_SCENE := preload("res://scene/zone/ZoneScreen.tscn")
 const CHARACTER_SCREEN_SCENE := preload("res://scene/character/CharacterScreen.tscn")
 const QUEST_JOURNAL_SCENE := preload("res://scene/quests/QuestJournal.tscn")
+const CARNET_SCENE := preload("res://scene/carnet/CarnetScreen.tscn")
 const CRAFT_SCREEN_SCENE := preload("res://scene/craft/CraftScreen.tscn")
 const ZONE_NODE_SCRIPT := preload("res://scripts/map/zone_node.gd")
 const LOGIN_SCREEN_SCENE := preload("res://scene/auth/LoginScreen.tscn")
@@ -18,6 +19,9 @@ const LOGIN_SCREEN_SCENE := preload("res://scene/auth/LoginScreen.tscn")
 # Les positions des zones (0 à 100) sont multipliées par MAP_SCALE pixels.
 const MAP_SCALE := 8.0
 const MAP_PADDING := 150.0
+# Ce qui dépasse d'un marqueur de zone autour de son point : niveau au-dessus, nom en dessous.
+const MARKER_EXTENT_ABOVE := 46.0
+const MARKER_EXTENT_BELOW := 80.0
 # Hauteur approximative de la fiche de zone, pour centrer la zone choisie
 # dans la partie de la carte qui reste visible au-dessus.
 const SHEET_CLEARANCE := 170.0
@@ -56,13 +60,19 @@ const TYPE_LABELS := {
 @onready var zone_sheet: PanelContainer = $ZoneSheet
 @onready var sheet_box: VBoxContainer = $ZoneSheet/SheetBox
 @onready var bottom_bar: PanelContainer = $BottomBar
-@onready var player_level: Label = $BottomBar/Row/PlayerBox/PlayerLevel
-@onready var player_title: Label = $BottomBar/Row/PlayerBox/PlayerTitle
-@onready var xp_bar: ProgressBar = $BottomBar/Row/PlayerBox/XpBar
-@onready var player_gold: Label = $BottomBar/Row/PlayerBox/PlayerGold
-@onready var craft_button: Button = $BottomBar/Row/CraftButton
-@onready var quest_button: Button = $BottomBar/Row/QuestButton
-@onready var character_button: Button = $BottomBar/Row/CharacterButton
+@onready var level_badge: PanelContainer = $BottomBar/Layout/InfoRow/LevelBadge
+@onready var player_level: Label = $BottomBar/Layout/InfoRow/LevelBadge/LevelBox/PlayerLevel
+@onready var player_name: Label = $BottomBar/Layout/InfoRow/PlayerBox/PlayerName
+@onready var player_title: Label = $BottomBar/Layout/InfoRow/PlayerBox/PlayerTitle
+@onready var player_gold: Label = $BottomBar/Layout/InfoRow/PlayerGold
+@onready var hp_bar: ProgressBar = $BottomBar/Layout/Bars/HpBar
+@onready var hp_text: Label = $BottomBar/Layout/Bars/HpBar/HpText
+@onready var xp_bar: ProgressBar = $BottomBar/Layout/Bars/XpBar
+@onready var xp_text: Label = $BottomBar/Layout/Bars/XpBar/XpText
+@onready var craft_button: Button = $BottomBar/Layout/NavRow/CraftButton
+@onready var quest_button: Button = $BottomBar/Layout/NavRow/QuestButton
+@onready var carnet_button: Button = $BottomBar/Layout/NavRow/CarnetButton
+@onready var character_button: Button = $BottomBar/Layout/NavRow/CharacterButton
 
 # Étages du jeu ([{id, name}]) et ceux que le joueur peut visiter.
 var floors: Array = []
@@ -95,7 +105,6 @@ var center_tween: Tween
 
 var quest_badge: Label
 var character_badge: Label
-var hp_bar: ProgressBar
 var login_screen: Control
 
 
@@ -112,14 +121,29 @@ func _ready() -> void:
 		style.set_corner_radius_all(24)
 		recenter_button.add_theme_stylebox_override(style_name, style)
 	UiStyle.style_bar(xp_bar, UiStyle.COLOR_XP)
-
-	# Barre de PV au-dessus de la barre d'XP : elle remonte en continu.
-	hp_bar = ProgressBar.new()
-	hp_bar.custom_minimum_size = Vector2(0, 6)
-	hp_bar.show_percentage = false
 	UiStyle.style_bar(hp_bar, UiStyle.COLOR_HP)
-	xp_bar.get_parent().add_child(hp_bar)
-	xp_bar.get_parent().move_child(hp_bar, xp_bar.get_index())
+
+	# Pastille de niveau : un rond sombre cerclé d'or.
+	var badge_style := StyleBoxFlat.new()
+	badge_style.bg_color = Color(0.16, 0.14, 0.1)
+	badge_style.set_corner_radius_all(21)
+	badge_style.set_border_width_all(2)
+	badge_style.border_color = UiStyle.COLOR_HIGHLIGHT
+	level_badge.add_theme_stylebox_override("panel", badge_style)
+
+	var separator_style := StyleBoxLine.new()
+	separator_style.color = Color(1, 1, 1, 0.08)
+	$BottomBar/Layout/Separator.add_theme_stylebox_override("separator", separator_style)
+
+	setup_nav_button(craft_button, "🔨", "Artisanat")
+	setup_nav_button(quest_button, "📜", "Quêtes")
+	setup_nav_button(carnet_button, "📖", "Carnet")
+	setup_nav_button(character_button, "👤", "Perso")
+
+	# La fiche de zone et le bouton de recentrage se posent juste au-dessus de
+	# la barre du bas, quelle que soit sa hauteur (avec ou sans titre).
+	bottom_bar.resized.connect(place_above_bottom_bar)
+	place_above_bottom_bar()
 
 	quest_badge = make_badge(quest_button)
 	character_badge = make_badge(character_button)
@@ -129,6 +153,7 @@ func _ready() -> void:
 	recenter_button.pressed.connect(center_on_player)
 	craft_button.pressed.connect(_on_craft_button_pressed)
 	quest_button.pressed.connect(_on_quest_button_pressed)
+	carnet_button.pressed.connect(_on_carnet_button_pressed)
 	character_button.pressed.connect(_on_character_button_pressed)
 
 	GameState.session_failed.connect(_on_session_failed)
@@ -248,6 +273,41 @@ func load_floor(floor_id: String, center: bool) -> void:
 
 # --- Barre du personnage et badges ------------------------------------------------
 
+func place_above_bottom_bar() -> void:
+	var bar_top := bottom_bar.offset_bottom - bottom_bar.size.y
+	zone_sheet.offset_bottom = bar_top - 8
+	zone_sheet.offset_top = zone_sheet.offset_bottom
+	recenter_button.offset_bottom = bar_top - 8
+	recenter_button.offset_top = recenter_button.offset_bottom - 48
+
+
+# Bouton de la barre de navigation : icône au-dessus de son nom, fond discret
+# qui ne s'éclaire qu'au toucher.
+func setup_nav_button(button: Button, icon: String, caption: String) -> void:
+	for style_name in ["normal", "hover", "pressed", "focus"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(1, 1, 1, 0.0 if style_name in ["normal", "focus"] else (0.06 if style_name == "hover" else 0.12))
+		style.set_corner_radius_all(10)
+		button.add_theme_stylebox_override(style_name, style)
+
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 0)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	for part in [[icon, 20, Color(1, 1, 1)], [caption, 10, UiStyle.COLOR_MUTED]]:
+		var label := Label.new()
+		label.text = part[0]
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.add_theme_font_size_override("font_size", part[1])
+		label.add_theme_color_override("font_color", part[2])
+		box.add_child(label)
+
+	button.add_child(box)
+
+
 func make_badge(button: Button) -> Label:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.85, 0.25, 0.25)
@@ -260,7 +320,11 @@ func make_badge(button: Button) -> Label:
 	badge.add_theme_font_size_override("font_size", 11)
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge.position = Vector2(34, -6)
+	# En haut à droite de l'icône, au milieu du bouton quelle que soit sa largeur.
+	badge.anchor_left = 0.5
+	badge.anchor_right = 0.5
+	badge.offset_left = 8
+	badge.offset_top = 1
 	badge.visible = false
 	button.add_child(badge)
 	return badge
@@ -276,13 +340,14 @@ func update_hud() -> void:
 	var level := int(player.get("level", 1))
 	var xp := int(player.get("xp", 0))
 
-	player_level.text = "Niveau %d" % level
+	player_level.text = str(level)
+	player_name.text = str(player.get("display_name", "Aventurier"))
 	player_title.text = "🏅 " + equipped_title_name
 	player_title.visible = not equipped_title_name.is_empty()
 	xp_bar.max_value = max(xp_to_next_level, 1)
 	xp_bar.value = xp
-	xp_bar.tooltip_text = "%d / %d XP" % [xp, xp_to_next_level]
-	player_gold.text = "💰 %d or" % int(player.get("currency", {}).get("or", 0))
+	xp_text.text = "%s / %s XP" % [GameText.format_number(xp), GameText.format_number(xp_to_next_level)]
+	player_gold.text = "💰 " + GameText.format_number(int(player.get("currency", {}).get("or", 0)))
 	update_hp_bar()
 
 	set_badge(character_badge, int(player.get("stat_points", {}).get("available", 0)))
@@ -294,7 +359,7 @@ func update_hp_bar() -> void:
 	var hp := GameState.current_hp()
 	hp_bar.max_value = max(max_hp, 1)
 	hp_bar.value = hp
-	hp_bar.tooltip_text = "❤ %d / %d PV" % [int(hp), int(max_hp)]
+	hp_text.text = "❤ %d / %d PV" % [int(hp), int(max_hp)]
 
 
 func _process(_delta: float) -> void:
@@ -474,12 +539,24 @@ func clamp_map_position() -> void:
 	var map_size: Vector2 = map_container.size
 	var target: Vector2 = map_container.position
 
-	for axis in [0, 1]:
-		if map_size[axis] <= viewport_size[axis]:
-			# Carte plus petite que l'écran : elle reste centrée.
-			target[axis] = (viewport_size[axis] - map_size[axis]) / 2.0
-		else:
-			target[axis] = clamp(target[axis], viewport_size[axis] - map_size[axis], 0.0)
+	if map_size.x <= viewport_size.x:
+		# Carte plus petite que l'écran : elle reste centrée.
+		target.x = (viewport_size.x - map_size.x) / 2.0
+	else:
+		target.x = clamp(target.x, viewport_size.x - map_size.x, 0.0)
+
+	# Verticalement, les marqueurs de zone (leur point est à MAP_PADDING des
+	# bords de la carte ; le niveau dépasse au-dessus, le nom en dessous)
+	# doivent pouvoir venir entre les deux barres, plus hautes que cette marge.
+	var visible_top := top_bar.position.y + top_bar.size.y + 8.0
+	var visible_bottom := bottom_bar.position.y - 8.0
+	var content_top := MAP_PADDING - MARKER_EXTENT_ABOVE
+	var content_bottom := map_size.y - MAP_PADDING + MARKER_EXTENT_BELOW
+
+	if content_bottom - content_top <= visible_bottom - visible_top:
+		target.y = (visible_top + visible_bottom) / 2.0 - (content_top + content_bottom) / 2.0
+	else:
+		target.y = clamp(target.y, visible_bottom - content_bottom, visible_top - content_top)
 
 	map_container.position = target
 
@@ -776,6 +853,11 @@ func _on_character_button_pressed() -> void:
 func _on_quest_button_pressed() -> void:
 	if GameState.is_ready:
 		open_overlay(QUEST_JOURNAL_SCENE.instantiate())
+
+
+func _on_carnet_button_pressed() -> void:
+	if GameState.is_ready:
+		open_overlay(CARNET_SCENE.instantiate())
 
 
 func _on_craft_button_pressed() -> void:

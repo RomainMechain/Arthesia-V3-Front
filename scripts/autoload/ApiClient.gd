@@ -161,6 +161,11 @@ func get_player_quests(player_id: String) -> Dictionary:
 	return await get_json("/players/%s/quests" % player_id)
 
 
+# Carnet d'aventure : bestiaire, récoltes et habitants découverts, par étage.
+func get_player_carnet(player_id: String) -> Dictionary:
+	return await get_json("/players/%s/carnet" % player_id)
+
+
 # Disponibilité des entries d'une zone ; avec un joueur, les entries dont la
 # condition d'apparition n'est pas remplie sont marquées locked.
 func get_zone_state(zone_id: String, player_id := "") -> Dictionary:

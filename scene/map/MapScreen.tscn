@@ -94,9 +94,9 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -60.0
-offset_top = -152.0
+offset_top = -238.0
 offset_right = -12.0
-offset_bottom = -104.0
+offset_bottom = -190.0
 grow_horizontal = 0
 grow_vertical = 0
 tooltip_text = "Revenir à ma position"
@@ -126,67 +126,142 @@ anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 12.0
-offset_top = -92.0
-offset_right = -12.0
-offset_bottom = -12.0
+offset_left = 10.0
+offset_top = -166.0
+offset_right = -10.0
+offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 0
 
-[node name="Row" type="HBoxContainer" parent="BottomBar"]
+[node name="Layout" type="VBoxContainer" parent="BottomBar"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="PlayerBox" type="VBoxContainer" parent="BottomBar/Row"]
+[node name="InfoRow" type="HBoxContainer" parent="BottomBar/Layout"]
 layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 3
+theme_override_constants/separation = 10
+
+[node name="LevelBadge" type="PanelContainer" parent="BottomBar/Layout/InfoRow"]
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="LevelBox" type="VBoxContainer" parent="BottomBar/Layout/InfoRow/LevelBadge"]
+layout_mode = 2
+theme_override_constants/separation = -4
 alignment = 1
 
-[node name="PlayerLevel" type="Label" parent="BottomBar/Row/PlayerBox"]
+[node name="LevelCaption" type="Label" parent="BottomBar/Layout/InfoRow/LevelBadge/LevelBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 15
-text = "Niveau 1"
+theme_override_colors/font_color = Color(1, 0.82, 0.35, 0.8)
+theme_override_font_sizes/font_size = 8
+text = "NIV."
+horizontal_alignment = 1
+
+[node name="PlayerLevel" type="Label" parent="BottomBar/Layout/InfoRow/LevelBadge/LevelBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
+theme_override_font_sizes/font_size = 17
+text = "1"
+horizontal_alignment = 1
+
+[node name="PlayerBox" type="VBoxContainer" parent="BottomBar/Layout/InfoRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+alignment = 1
+
+[node name="PlayerName" type="Label" parent="BottomBar/Layout/InfoRow/PlayerBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Aventurier"
 text_overrun_behavior = 3
 
-[node name="PlayerTitle" type="Label" parent="BottomBar/Row/PlayerBox"]
+[node name="PlayerTitle" type="Label" parent="BottomBar/Layout/InfoRow/PlayerBox"]
 visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
 theme_override_font_sizes/font_size = 11
 text_overrun_behavior = 3
 
-[node name="XpBar" type="ProgressBar" parent="BottomBar/Row/PlayerBox"]
-custom_minimum_size = Vector2(0, 6)
+[node name="PlayerGold" type="Label" parent="BottomBar/Layout/InfoRow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
+theme_override_font_sizes/font_size = 14
+text = "💰 0"
+vertical_alignment = 1
+
+[node name="Bars" type="VBoxContainer" parent="BottomBar/Layout"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HpBar" type="ProgressBar" parent="BottomBar/Layout/Bars"]
+custom_minimum_size = Vector2(0, 14)
 layout_mode = 2
 show_percentage = false
 
-[node name="PlayerGold" type="Label" parent="BottomBar/Row/PlayerBox"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.82, 0.35, 1)
-theme_override_font_sizes/font_size = 12
-text = "💰 0 or"
+[node name="HpText" type="Label" parent="BottomBar/Layout/Bars/HpBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 10
+text = "PV"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="CraftButton" type="Button" parent="BottomBar/Row"]
-custom_minimum_size = Vector2(52, 52)
+[node name="XpBar" type="ProgressBar" parent="BottomBar/Layout/Bars"]
+custom_minimum_size = Vector2(0, 14)
 layout_mode = 2
-size_flags_vertical = 4
+show_percentage = false
+
+[node name="XpText" type="Label" parent="BottomBar/Layout/Bars/XpBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.9)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 10
+text = "XP"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Separator" type="HSeparator" parent="BottomBar/Layout"]
+layout_mode = 2
+
+[node name="NavRow" type="HBoxContainer" parent="BottomBar/Layout"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="CraftButton" type="Button" parent="BottomBar/Layout/NavRow"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
 tooltip_text = "Artisanat"
-theme_override_font_sizes/font_size = 20
-text = "🔨"
 
-[node name="QuestButton" type="Button" parent="BottomBar/Row"]
-custom_minimum_size = Vector2(52, 52)
+[node name="QuestButton" type="Button" parent="BottomBar/Layout/NavRow"]
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
-size_flags_vertical = 4
+size_flags_horizontal = 3
 tooltip_text = "Journal de quêtes"
-theme_override_font_sizes/font_size = 20
-text = "📜"
 
-[node name="CharacterButton" type="Button" parent="BottomBar/Row"]
-custom_minimum_size = Vector2(52, 52)
+[node name="CarnetButton" type="Button" parent="BottomBar/Layout/NavRow"]
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
-size_flags_vertical = 4
+size_flags_horizontal = 3
+tooltip_text = "Carnet d'aventure"
+
+[node name="CharacterButton" type="Button" parent="BottomBar/Layout/NavRow"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
 tooltip_text = "Personnage"
-theme_override_font_sizes/font_size = 20
-text = "👤"

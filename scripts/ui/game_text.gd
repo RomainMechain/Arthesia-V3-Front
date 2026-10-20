@@ -50,8 +50,16 @@ static func prettify_id(value: String) -> String:
 	return text.substr(0, 1).to_upper() + text.substr(1)
 
 
+# Nombre lisible : entier avec espaces de milliers (« 12 480 »), sinon une décimale.
 static func format_number(value: float) -> String:
 	if is_equal_approx(value, roundf(value)):
-		return str(int(roundf(value)))
+		var digits := str(absi(int(roundf(value))))
+		var grouped := ""
+
+		while digits.length() > 3:
+			grouped = "\u00a0" + digits.substr(digits.length() - 3) + grouped
+			digits = digits.substr(0, digits.length() - 3)
+
+		return ("-" if value < 0 else "") + digits + grouped
 
 	return "%.1f" % value
