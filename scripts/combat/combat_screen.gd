@@ -91,6 +91,9 @@ var status_received_at := 0
 var effects_refresh := 0.0
 var phase := 0
 var phase_count := 0
+# Début du combat (durée affichée à la victoire) et combat contre un écho.
+var combat_started_ms := 0
+var is_echo := false
 
 # Attaque télégraphiée en cours d'annonce (vide sinon) et moment où elle frappe.
 var pending_attack: Dictionary = {}
@@ -622,6 +625,8 @@ func on_combat_started(data: Dictionary) -> void:
 
 	combat_log.clear()
 	log_lines = 0
+	combat_started_ms = Time.get_ticks_msec()
+	is_echo = data.get("echo", false)
 	add_log("Le combat contre %s commence !" % monster_name.text, COLOR_MUTED)
 
 
@@ -952,33 +957,88 @@ func show_result(title: String, color: Color, lines: Array) -> void:
 	result_overlay.visible = true
 
 
+# Écran de victoire en blocs : combat, XP, niveau, butin, quêtes, déblocages.
 func show_victory(data: Dictionary) -> void:
 	add_log("🏆 Victoire !", COLOR_HIGHLIGHT)
+	show_result("Écho vaincu !" if is_echo else "Victoire !", COLOR_HIGHLIGHT, [])
 
-	var lines: Array = ["✨ +%d XP" % int(data.get("xp_gagne", 0))]
+	# Le combat : durée et PV restants.
+	var seconds := int((Time.get_ticks_msec() - combat_started_ms) / 1000.0)
+	add_result_line(
+		"⏱ %d min %02d  ·  ❤ %s / %s PV" % [seconds / 60, seconds % 60, format_number(player_hp.value), format_number(player_hp.max_value)],
+		12,
+		COLOR_MUTED
+	)
 
+	# L'XP, avec la barre du niveau en cours.
+	add_result_line("✨ +%d XP" % int(data.get("xp_gagne", 0)), 18, COLOR_HIGHLIGHT)
+	var xp_needed := int(data.get("xp_to_next_level", 0))
+
+	if xp_needed > 0:
+		var bar := ProgressBar.new()
+		bar.custom_minimum_size = Vector2(0, 8)
+		bar.show_percentage = false
+		bar.max_value = xp_needed
+		bar.value = int(data.get("player_xp_total", 0))
+		UiStyle.style_bar(bar, UiStyle.COLOR_XP)
+		result_details.add_child(bar)
+		add_result_line(
+			"Niveau %d · %d / %d XP" % [int(data.get("player_level", 1)), int(data.get("player_xp_total", 0)), xp_needed],
+			12,
+			COLOR_MUTED
+		)
+
+	if int(data.get("levels_gained", 0)) > 0:
+		var points := int(data.get("player_stat_points", {}).get("available", 0))
+		add_result_line("🌟 Niveau %d atteint !" % int(data.get("player_level", 1)), 17, COLOR_BONUS)
+
+		if points > 0:
+			add_result_line("%d points de stat à répartir" % points, 13, COLOR_BONUS)
+
+	# Le butin.
 	var loot = data.get("loot")
 
 	if loot is Array and loot.size() >= 2:
 		var res := await ApiClient.get_template("item", str(loot[0]))
-		var loot_name: String = res.data.get("name", str(loot[0])) if res.ok else prettify_id(str(loot[0]))
-		lines.append("🎁 %s ×%d" % [loot_name, int(loot[1])])
+		var item: Dictionary = res.data if res.ok else {}
+		var loot_name: String = item.get("name", prettify_id(str(loot[0])))
+		add_result_line("🎁 %s ×%d" % [loot_name, int(loot[1])], 15)
+
+		if not item.is_empty():
+			add_result_line("%s · niveau %d" % [GameText.prettify_id(str(item.get("category", ""))), int(item.get("level", 1))], 12, COLOR_MUTED)
+	elif is_echo:
+		add_result_line("L'écho ne laisse aucun butin : il est parti avec le premier vainqueur.", 12, COLOR_MUTED)
 	else:
-		lines.append("Pas de butin cette fois.")
+		add_result_line("Pas de butin cette fois.", 12, COLOR_MUTED)
 
-	if int(data.get("levels_gained", 0)) > 0:
-		lines.append("🌟 Niveau %d atteint !" % int(data.get("player_level", 1)))
-
+	# Quêtes en cours qui ont avancé.
 	for update in data.get("quest_progress", []):
-		lines.append(GameState.describe_quest_progress(update))
+		add_result_line(GameState.describe_quest_progress(update), 13, COLOR_BONUS if update.get("quest_ready", false) else null)
 
-	for unlock in data.get("newly_unlocked", []):
-		lines.append(await GameState.describe_unlock(str(unlock)))
+	# Ce qui vient d'être débloqué (compétence, titre, zone…), mis en valeur.
+	var unlocks: Array = data.get("newly_unlocked", [])
 
-	show_result("Victoire !", COLOR_HIGHLIGHT, lines)
+	if not unlocks.is_empty():
+		add_result_line("— Nouveau ! —", 14, COLOR_HIGHLIGHT)
+
+		for unlock in unlocks:
+			add_result_line(await GameState.describe_unlock(str(unlock)), 14, COLOR_HIGHLIGHT)
 
 	# Recharge le joueur : la carte et l'écran Personnage se mettent à jour.
 	GameState.refresh_player()
+
+
+func add_result_line(text: String, font_size: int, color = null) -> void:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", font_size)
+
+	if color != null:
+		label.add_theme_color_override("font_color", color)
+
+	result_details.add_child(label)
 
 
 # --- Boutons -----------------------------------------------------------------

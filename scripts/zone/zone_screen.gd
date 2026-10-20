@@ -314,6 +314,8 @@ func availability(entry: Dictionary) -> Array:
 				return ["stock %d/%d" % [int(state.get("current_stock", 0)), int(state["max_stock"])], COLOR_BONUS]
 			return ["", null]
 		"defeated":
+			if state.get("echo_available", false):
+				return ["💀 Vaincu · écho disponible", COLOR_HIGHLIGHT]
 			return ["💀 Vaincu", COLOR_MUTED]
 		"depleted":
 			var left := seconds_left(entry_id)
@@ -690,15 +692,19 @@ func show_monster_detail(entry: Dictionary, template: Dictionary) -> void:
 		loot_box = card.get_child(0) as VBoxContainer
 
 	var available := is_entry_available(entry)
+	# Boss d'étage déjà vaincu : son écho s'affronte une fois, pour l'XP seulement.
+	var echo: bool = entry_states.get(entry.get("id", ""), {}).get("echo_available", false)
 
-	if not available:
+	if echo:
+		add_label("Ce gardien a déjà été vaincu, et son butin est parti avec le premier vainqueur. Son écho rôde encore : l'affronter ne rapporte que de l'expérience, une seule fois.", 13, COLOR_HIGHLIGHT)
+	elif not available:
 		add_label("Ce monstre n'est pas là pour l'instant (%s)." % availability(entry)[0], 13, COLOR_HIGHLIGHT)
 
 	var fight_button := Button.new()
-	fight_button.text = "⚔ Combattre"
+	fight_button.text = "👻 Affronter l'écho (XP seulement)" if echo else "⚔ Combattre"
 	fight_button.custom_minimum_size = Vector2(0, 54)
 	fight_button.add_theme_font_size_override("font_size", 18)
-	fight_button.disabled = not available
+	fight_button.disabled = not available and not echo
 	fight_button.pressed.connect(func(): open_combat(entry))
 	body.add_child(fight_button)
 
