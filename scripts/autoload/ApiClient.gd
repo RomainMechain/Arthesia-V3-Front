@@ -12,11 +12,36 @@ extends Node
 # Clés du résultat : ok (bool), status (code HTTP, 0 si le serveur est
 # injoignable), data (JSON décodé) et error (message lisible si ok est faux).
 
-const BASE_URL := "http://127.0.0.1:8000"
+const SERVER_CONFIG := "res://config/server.cfg"
+
+# Adresse du serveur, lue dans config/server.cfg (voir server_url()).
+var BASE_URL := server_url()
 
 # Le contenu statique (étages, zones, templates) ne change pas pendant une
 # session : on le garde en mémoire pour ne pas le redemander à chaque écran.
 var _content_cache: Dictionary = {}
+
+
+# Sur téléphone : remote_url. Sur PC : local_url, ou l'argument --server=remote
+# (ou --server=<adresse>) passé après -- sur la ligne de commande.
+static func server_url() -> String:
+	var config := ConfigFile.new()
+	config.load(SERVER_CONFIG)
+	var local_url := str(config.get_value("server", "local_url", "http://127.0.0.1:8000"))
+	var remote_url := str(config.get_value("server", "remote_url", local_url))
+	var choice := "remote" if OS.has_feature("mobile") else "local"
+
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--server="):
+			choice = arg.trim_prefix("--server=")
+
+	match choice:
+		"local":
+			return local_url
+		"remote":
+			return remote_url
+		_:
+			return choice.trim_suffix("/")
 
 
 func request_json(

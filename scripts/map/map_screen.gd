@@ -179,6 +179,10 @@ func _ready() -> void:
 		_on_session_ready()
 	else:
 		GameState.session_ready.connect(_on_session_ready)
+		Auth.signed_in.connect(show_connecting)
+
+		if Auth.is_signed_in():
+			show_connecting()
 
 
 # --- Session et données ---------------------------------------------------------
@@ -187,6 +191,20 @@ func _on_session_ready() -> void:
 	update_hud()
 	await refresh_meta()
 	await load_floor(GameState.floor_id, true)
+
+
+# Le serveur hébergé gratuitement s'endort sans joueur : la première requête
+# peut attendre son réveil, jusqu'à une minute.
+func show_connecting() -> void:
+	if GameState.is_ready:
+		return
+
+	floor_title.text = "Arthesia"
+	floor_subtitle.text = "Connexion au serveur…"
+	await get_tree().create_timer(5.0).timeout
+
+	if not GameState.is_ready and floor_subtitle.text == "Connexion au serveur…":
+		floor_subtitle.text = "Le serveur se réveille, ça peut prendre une minute…"
 
 
 func _on_session_failed(message: String) -> void:
