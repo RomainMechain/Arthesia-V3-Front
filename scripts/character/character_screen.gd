@@ -110,12 +110,12 @@ var points_label: Label
 var stats_error_label: Label
 
 var is_submitting := false
+# Réinitialisation des points : premier appui = demande de confirmation.
+var confirm_respec := false
 
 var item_templates: Dictionary = {}
 var skill_templates: Dictionary = {}
 var title_templates: Dictionary = {}
-# Titres verrouillés : title_id -> lignes [texte, remplie] de leur condition.
-var title_conditions: Dictionary = {}
 var equipped_title_name := ""
 
 # Incrémenté à chaque rendu : un chargement encore en cours pour un ancien
@@ -333,9 +333,78 @@ func render_stats() -> void:
 	stats_error_label = add_label("", 0, COLOR_ERROR)
 	stats_error_label.visible = false
 
+	add_respec_section()
 	add_professions_section()
 	add_account_section()
 	update_stats_display()
+
+
+# Rend tous les points dépensés, en ville : gratuit la première fois, puis
+# payant (prix donné par le serveur dans stats_data.respec).
+func add_respec_section() -> void:
+	var spent: Dictionary = GameState.player.get("stat_points", {}).get("spent", {})
+	var total := 0
+
+	for stat in spent:
+		total += int(spent[stat])
+
+	if total <= 0:
+		return
+
+	var respec: Dictionary = stats_data.get("respec", {})
+	var cost := int(respec.get("cost", 0))
+	var gold := int(GameState.player.get("currency", {}).get("or", 0))
+
+	add_section_title("🔄 Réinitialiser mes points")
+	add_label(
+		"Récupère tes %d points pour les répartir autrement. %s" % [
+			total,
+			"La première fois est gratuite." if cost == 0 else "Coût : %d or." % cost,
+		],
+		12,
+		COLOR_MUTED
+	)
+
+	var price := "gratuit" if cost == 0 else "%d or" % cost
+	var button := make_button("Réinitialiser (%s)" % price)
+
+	if not bool(respec.get("in_town", false)):
+		button.text = "Disponible seulement en ville"
+		button.disabled = true
+	elif gold < cost:
+		button.text = "Il te faut %d or" % cost
+		button.disabled = true
+	elif confirm_respec:
+		button.text = "Confirmer : tout réinitialiser (%s)" % price
+
+	button.disabled = button.disabled or is_submitting
+	button.pressed.connect(_on_respec_pressed)
+	content.add_child(button)
+
+
+func _on_respec_pressed() -> void:
+	if not confirm_respec:
+		confirm_respec = true
+		render_stats()
+		return
+
+	confirm_respec = false
+	is_submitting = true
+	pending_points.clear()
+	var res := await GameState.perform_action("reset_stat_points", {})
+	is_submitting = false
+
+	if current_tab != "stats":
+		return
+
+	if not res.ok:
+		render_stats()
+		show_error(res.error)
+		return
+
+	# Le rechargement du joueur a redessiné l'onglet pendant l'action : on
+	# relit les stats (prix suivant compris) maintenant qu'elle est terminée.
+	refresh()
 
 
 func add_account_section() -> void:
@@ -1064,7 +1133,8 @@ func refresh_skills(id: int) -> void:
 	render_skills()
 
 
-# Charge tous les titres du jeu, et la condition des titres encore verrouillés.
+# Charge tous les titres du jeu. Leurs conditions restent secrètes : le serveur
+# ne les envoie pas, et l'écran ne montre que les titres débloqués.
 func load_titles(id: int) -> bool:
 	var res := await ApiClient.get_content("/content/templates/title")
 
@@ -1080,8 +1150,6 @@ func load_titles(id: int) -> bool:
 			var detail := await ApiClient.get_template("title", title_id)
 			title_templates[title_id] = detail.data if detail.ok else summary
 
-		if not unlocked.has(title_id):
-			title_conditions[title_id] = await GameState.describe_condition(title_templates[title_id].get("unlock_condition"))
 
 		if id != render_id:
 			return false
@@ -1149,25 +1217,27 @@ func add_titles_section() -> void:
 	add_section_title("🏅 Titres  (%d / %d)" % [unlocked.size(), title_templates.size()])
 	add_label("Un seul titre peut être porté à la fois ; ses effets s'appliquent en permanence.", 12, COLOR_MUTED)
 
-	var ids: Array = title_templates.keys()
-	# Le titre porté d'abord, puis les titres débloqués, puis les autres.
+	# Seuls les titres débloqués apparaissent : les autres, et la façon de les
+	# obtenir, restent à découvrir.
+	var ids: Array = title_templates.keys().filter(func(title_id): return unlocked.has(title_id))
+	# Le titre porté d'abord, puis les autres par nom.
 	ids.sort_custom(
 		func(a, b):
-			var rank_a := 0 if a == equipped else (1 if unlocked.has(a) else 2)
-			var rank_b := 0 if b == equipped else (1 if unlocked.has(b) else 2)
-			if rank_a != rank_b:
-				return rank_a < rank_b
+			if (a == equipped) != (b == equipped):
+				return a == equipped
 			return str(title_templates[a].get("name", a)).naturalnocasecmp_to(str(title_templates[b].get("name", b))) < 0
 	)
 
 	if ids.is_empty():
-		add_label("Aucun titre n'existe encore.", 13, COLOR_MUTED)
+		add_label("Aucun titre pour l'instant.", 13, COLOR_MUTED)
 
 	for title_id in ids:
-		if unlocked.has(title_id):
-			content.add_child(build_title_card(title_id, title_id == equipped))
-		else:
-			content.add_child(build_locked_title_card(title_id))
+		content.add_child(build_title_card(title_id, title_id == equipped))
+
+	var hidden := title_templates.size() - ids.size()
+
+	if hidden > 0:
+		add_label("🔒 %d titre%s reste%s à découvrir…" % [hidden, "s" if hidden > 1 else "", "nt" if hidden > 1 else ""], 13, COLOR_MUTED)
 
 
 func build_title_card(title_id: String, is_equipped: bool) -> PanelContainer:
@@ -1207,29 +1277,6 @@ func build_title_card(title_id: String, is_equipped: bool) -> PanelContainer:
 
 	if not description.is_empty():
 		box.add_child(make_label(description, 12, COLOR_MUTED))
-
-	return card
-
-
-func build_locked_title_card(title_id: String) -> PanelContainer:
-	var title: Dictionary = title_templates.get(title_id, {})
-	var card := make_card(Color(0.13, 0.13, 0.14))
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 3)
-	card.add_child(box)
-
-	box.add_child(make_label("🔒 " + str(title.get("name", title_id)), 15, COLOR_MUTED))
-
-	var effects := describe_skill_effects(title)
-
-	if not effects.is_empty():
-		box.add_child(make_label(effects, 12, COLOR_MUTED))
-
-	for line in title_conditions.get(title_id, []):
-		if line[1] == null:
-			box.add_child(make_label(str(line[0]), 12, COLOR_MUTED))
-		else:
-			box.add_child(make_label(("✓ " if line[1] else "✗ ") + str(line[0]), 12, COLOR_BONUS if line[1] else COLOR_MUTED))
 
 	return card
 

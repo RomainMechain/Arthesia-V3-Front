@@ -38,6 +38,8 @@ var selection: Dictionary = {}
 var is_crafting := false
 var last_result: Dictionary = {}
 var last_error := ""
+# Fenêtre du carnet de recettes, ouverte par-dessus l'atelier (null sinon).
+var book_overlay: Control
 
 
 func _ready() -> void:
@@ -193,7 +195,17 @@ func open_workshop(entry: Dictionary) -> void:
 
 	clear_body()
 	add_label("Chargement du sac...", 14, COLOR_MUTED)
-	await load_items(GameState.player.get("inventory", {}).keys())
+
+	# Les objets du sac et ceux du carnet de cet atelier (ingrédients et résultats).
+	var ids: Array = GameState.player.get("inventory", {}).keys()
+
+	for recipe in workshop_recipes():
+		ids.append(str(recipe.get("output_item_id", "")))
+
+		for input in recipe.get("inputs", []):
+			ids.append(str(input.get("item_id", "")))
+
+	await load_items(ids)
 	render_workshop()
 
 
@@ -219,6 +231,7 @@ func render_workshop() -> void:
 	add_parameters()
 	add_selection()
 	add_craft_button()
+	add_craft_book()
 	add_inventory_picker(level)
 
 
@@ -339,6 +352,151 @@ func add_craft_button() -> void:
 		add_label("Une combinaison inédite peut prendre quelques secondes : l'objet est en train d'être inventé.", 12, COLOR_MUTED)
 
 
+# --- Carnet de recettes -------------------------------------------------------
+
+# Recettes de cet atelier dans le carnet privé du joueur, la plus récente d'abord.
+func workshop_recipes() -> Array:
+	var book: Array = GameState.player.get("craft_book", [])
+	return book.filter(func(recipe): return str(recipe.get("workshop_id", "")) == str(workshop.get("id", "")))
+
+
+# Bouton du carnet dans l'atelier : la liste s'ouvre dans une fenêtre.
+func add_craft_book() -> void:
+	var recipes := workshop_recipes()
+
+	if recipes.is_empty():
+		return
+
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(0, 44)
+	button.text = "📖 Mon carnet  (%d recette%s)" % [recipes.size(), "s" if recipes.size() > 1 else ""]
+	button.disabled = is_crafting
+	button.pressed.connect(open_craft_book)
+	body.add_child(button)
+
+
+func open_craft_book() -> void:
+	close_craft_book()
+
+	book_overlay = ColorRect.new()
+	book_overlay.color = Color(0, 0, 0, 0.65)
+	book_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	book_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(book_overlay)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+
+	for side in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 12)
+
+	for side in ["top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 36)
+
+	book_overlay.add_child(margin)
+
+	var panel := UiStyle.make_card(Color(0.12, 0.12, 0.14))
+	margin.add_child(panel)
+
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 8)
+	panel.add_child(layout)
+
+	var header := HBoxContainer.new()
+	layout.add_child(header)
+
+	var title := make_label("📖 Mon carnet · %s" % str(workshop.get("name", "Atelier")), 17, null, false)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	header.add_child(title)
+
+	var close := Button.new()
+	close.text = "✕"
+	close.custom_minimum_size = Vector2(40, 40)
+	close.pressed.connect(close_craft_book)
+	header.add_child(close)
+
+	layout.add_child(make_label("Tes recettes restent secrètes : à toi de choisir avec qui les partager.", 12, COLOR_MUTED))
+
+	var list_scroll := ScrollContainer.new()
+	list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	layout.add_child(list_scroll)
+
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 8)
+	list_scroll.add_child(list)
+
+	for recipe in workshop_recipes():
+		add_recipe_card(recipe, list)
+
+
+func close_craft_book() -> void:
+	if book_overlay != null:
+		book_overlay.queue_free()
+		book_overlay = null
+
+
+func add_recipe_card(recipe: Dictionary, list: VBoxContainer) -> void:
+	var card := UiStyle.make_card()
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	card.add_child(box)
+	list.add_child(card)
+	var output_id := str(recipe.get("output_item_id", ""))
+	var times := int(recipe.get("times", 1))
+	box.add_child(make_label("→ %s" % item_name(output_id), 15, COLOR_HIGHLIGHT))
+
+	var inputs := PackedStringArray()
+	var missing := PackedStringArray()
+	var inventory: Dictionary = GameState.player.get("inventory", {})
+
+	for input in recipe.get("inputs", []):
+		var item_id := str(input.get("item_id", ""))
+		var quantity := int(input.get("quantity", 1))
+		inputs.append("%d %s" % [quantity, item_name(item_id)])
+
+		if int(inventory.get(item_id, 0)) < quantity:
+			missing.append(item_name(item_id))
+
+	box.add_child(make_label(" + ".join(inputs), 13))
+
+	var details := PackedStringArray()
+	var recipe_parameters: Dictionary = recipe.get("parameters", {})
+
+	for parameter in workshop.get("parameters", []):
+		var id := str(parameter.get("id", ""))
+
+		if recipe_parameters.has(id):
+			details.append("%s : %s" % [str(parameter.get("label", GameText.prettify_id(id))).to_lower(), recipe_parameters[id]])
+
+	details.append("faite %d fois" % times if times > 1 else "faite une fois")
+	box.add_child(make_label(" · ".join(details), 12, COLOR_MUTED))
+
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(0, 38)
+	button.disabled = is_crafting or not missing.is_empty()
+	button.text = "Reprendre cette recette" if missing.is_empty() else "Il te manque : " + ", ".join(missing)
+	button.pressed.connect(func(): use_recipe(recipe))
+	box.add_child(button)
+
+
+# Remet les ingrédients et les paramètres de la recette : il ne reste qu'à fabriquer.
+func use_recipe(recipe: Dictionary) -> void:
+	close_craft_book()
+	selection = {}
+
+	for input in recipe.get("inputs", []):
+		selection[str(input.get("item_id", ""))] = int(input.get("quantity", 1))
+
+	parameters = recipe.get("parameters", {}).duplicate()
+	last_result = {}
+	last_error = ""
+	render_workshop()
+	scroll.scroll_vertical = 0
+
+
 func add_inventory_picker(level: int) -> void:
 	add_label("🎒 Ton sac", 17)
 
@@ -455,7 +613,13 @@ func _on_back_pressed() -> void:
 	if is_crafting:
 		return
 
+	# Le retour ferme d'abord le carnet s'il est ouvert.
+	if book_overlay != null:
+		close_craft_book()
+		return
+
 	if workshop.is_empty():
 		back_requested.emit()
 	else:
+		close_craft_book()
 		show_workshops()
