@@ -30,6 +30,8 @@ const RING_LOCKED := Color(0.4, 0.4, 0.42)
 
 var zone_data: Dictionary = {}
 var is_selected := false
+# Niveaux de la zone, colorés selon le danger pour le joueur (au-dessus de la pastille).
+var level_label: Label
 
 
 func _ready() -> void:
@@ -80,6 +82,27 @@ func setup(data: Dictionary, state: String, is_current: bool, quest_ready: bool)
 		badge.text = "❗"
 	else:
 		badge.text = ""
+
+	show_danger(GameState.zone_danger(data))
+
+
+func show_danger(danger: Dictionary) -> void:
+	if level_label == null:
+		level_label = Label.new()
+		level_label.position = Vector2(0, -18)
+		level_label.size = Vector2(120, 16)
+		level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		level_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		level_label.add_theme_font_size_override("font_size", 11)
+		level_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		level_label.add_theme_constant_override("outline_size", 4)
+		add_child(level_label)
+
+	level_label.visible = not danger.is_empty()
+
+	if level_label.visible:
+		level_label.text = str(danger.label)
+		level_label.add_theme_color_override("font_color", danger.color)
 
 
 func set_selected(selected: bool) -> void:

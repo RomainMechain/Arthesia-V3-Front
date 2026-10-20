@@ -642,6 +642,12 @@ func show_zone_sheet(zone: Dictionary) -> void:
 
 	sheet_box.add_child(make_label(meta, 12, COLOR_HIGHLIGHT if is_current else COLOR_MUTED))
 
+	var danger := GameState.zone_danger(zone)
+
+	if not danger.is_empty():
+		var warning := "⚠ " if danger.text.begins_with("très") or danger.text.begins_with("dangereux") else ""
+		sheet_box.add_child(make_label("%s%s · %s" % [warning, danger.label.replace("Niv.", "Niveaux" if "-" in danger.label else "Niveau"), danger.text], 13, danger.color))
+
 	if state == "open":
 		await fill_open_sheet(zone, id)
 	else:

@@ -153,6 +153,31 @@ func equipped_title_name() -> String:
 	return str(res.data.get("name", title_id)) if res.ok else GameText.prettify_id(str(title_id))
 
 
+# Danger d'une zone pour le joueur, d'après sa plage de niveaux : {} si la zone
+# n'a pas de combat. Un monstre plus faible rapporte 20 % d'XP en moins par
+# niveau d'écart (balance.level_gap_xp_multiplier côté serveur).
+func zone_danger(zone: Dictionary) -> Dictionary:
+	var level_range = zone.get("level_range")
+
+	if typeof(level_range) != TYPE_ARRAY or level_range.size() < 2 or zone.get("type", "") in ["town", "passage"]:
+		return {}
+
+	var low := int(level_range[0])
+	var high := int(level_range[1])
+	var level := int(player.get("level", 1))
+	var label := "Niv. %d" % low if low == high else "Niv. %d-%d" % [low, high]
+
+	if level <= low - 3:
+		return {"label": label, "text": "très dangereux pour toi", "color": Color(0.95, 0.35, 0.3)}
+	if level < low:
+		return {"label": label, "text": "dangereux pour toi", "color": Color(1.0, 0.62, 0.25)}
+	if level <= high:
+		return {"label": label, "text": "à ta mesure", "color": Color(0.45, 0.85, 0.5)}
+	if level <= high + 2:
+		return {"label": label, "text": "facile, moins d'XP", "color": Color(0.7, 0.72, 0.75)}
+	return {"label": label, "text": "trop facile, peu d'XP", "color": Color(0.5, 0.5, 0.52)}
+
+
 # État d'une quête pour le joueur courant : "", "active" ou "completed".
 func quest_state(quest_id: String) -> String:
 	return str(player.get("quests", {}).get(quest_id, {}).get("state", ""))
