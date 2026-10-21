@@ -23,6 +23,8 @@ const MAX_INPUTS := 4
 const MAX_TIMES := 20
 # Un niveau de métier couvre deux niveaux d'objet (balance.ITEM_LEVELS_PER_PROFESSION_LEVEL côté serveur).
 const ITEM_LEVELS_PER_PROFESSION_LEVEL := 2
+# Un objet de cette génération ne sert plus d'ingrédient (craft_rules.MAX_CRAFT_GENERATION côté serveur).
+const MAX_CRAFT_GENERATION := 2
 
 const STAT_LABELS := {"hp": "PV", "atk": "ATK", "def": "DEF", "agi": "AGI", "int": "INT", "sag": "SAG"}
 
@@ -39,6 +41,8 @@ var parameters: Dictionary = {}
 # item_id -> quantité choisie, dans l'ordre d'ajout.
 var selection: Dictionary = {}
 var is_crafting := false
+# Type d'objet choisi dans l'atelier (orientation de la rune pour l'enchantement).
+var item_type := ""
 # Nombre de fabrications d'affilée demandé (recette connue seulement).
 var times := 1
 var last_result: Dictionary = {}
@@ -193,6 +197,7 @@ func open_workshop(entry: Dictionary) -> void:
 	workshop = entry
 	parameters = {}
 	selection = {}
+	item_type = ""
 	last_result = {}
 	last_error = ""
 	title_label.text = str(entry.get("name", "Atelier"))
@@ -233,11 +238,91 @@ func render_workshop() -> void:
 		var box := add_card_box()
 		box.add_child(make_label("⚠ " + last_error, 14, COLOR_ERROR))
 
+	add_item_types()
 	add_parameters()
 	add_selection()
 	add_craft_button()
 	add_craft_book()
 	add_inventory_picker(level)
+
+
+# --- Type d'objet, générations, enchantement (craft_rules côté serveur) ------
+
+func is_enchanting() -> bool:
+	return workshop.get("mode", "") == "enchant"
+
+
+func item_generation(item_id: String) -> int:
+	return int(items.get(item_id, {}).get("generation", 0))
+
+
+# Un ingrédient déjà travaillé interdit de fabriquer un matériau.
+func selection_reworked() -> bool:
+	for item_id in selection:
+		if item_generation(item_id) >= 1:
+			return true
+
+	return false
+
+
+func available_types() -> Array:
+	var reworked := selection_reworked()
+	return workshop.get("item_types", []).filter(func(t): return not (reworked and t.get("category", "") == "material"))
+
+
+# Pourquoi un objet du sac ne peut pas entrer dans ce craft ("" s'il le peut).
+func unusable_reason(item_id: String) -> String:
+	var item: Dictionary = items.get(item_id, {})
+
+	if item.get("enchanted", false):
+		return "enchanté"
+	if item_generation(item_id) >= MAX_CRAFT_GENERATION:
+		return "trop travaillé"
+	if is_enchanting():
+		var category := str(item.get("category", ""))
+
+		if category != "equipment" and category != "material":
+			return "ni équipement ni matériau"
+		if category == "equipment" and selection.keys().any(func(id): return items.get(id, {}).get("category", "") == "equipment"):
+			return "un seul équipement"
+
+	return ""
+
+
+func add_item_types() -> void:
+	var types := available_types()
+
+	# Un type devenu impossible (matériau après un ingrédient travaillé) est oublié.
+	if not types.any(func(t): return t.get("id", "") == item_type):
+		item_type = ""
+
+	var box := add_card_box()
+	box.add_child(make_label("Orientation de la rune" if is_enchanting() else "Ce que tu fabriques", 15, null, false))
+
+	if is_enchanting():
+		box.add_child(make_label("Pose un équipement et 1 à 3 matériaux : la rune le renforce. Un objet ne s'enchante qu'une fois, puis ne sert plus dans aucun craft.", 12, COLOR_MUTED))
+	elif selection_reworked():
+		box.add_child(make_label("Avec un ingrédient déjà travaillé, seuls un équipement ou un consommable sont possibles.", 12, COLOR_MUTED))
+
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 6)
+	flow.add_theme_constant_override("v_separation", 6)
+
+	for type in types:
+		var chip := Button.new()
+		chip.text = str(type.get("label", type.get("id", "")))
+		chip.toggle_mode = true
+		chip.button_pressed = type.get("id", "") == item_type
+		chip.custom_minimum_size = Vector2(0, 38)
+		chip.disabled = is_crafting
+		chip.pressed.connect(
+			func():
+				item_type = str(type.get("id", ""))
+				render_workshop()
+		)
+		flow.add_child(chip)
+
+	box.add_child(flow)
 
 
 func add_parameters() -> void:
@@ -280,7 +365,7 @@ func add_selection() -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 4)
 
-		var name_label := make_label(item_name(item_id), 14)
+		var name_label := make_label(item_name(item_id), 14, GameText.rarity_color(items.get(item_id, {})))
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(name_label)
 
@@ -331,6 +416,9 @@ func add_craft_button() -> void:
 	# Une série ne vaut que pour une recette du carnet, dans la limite du sac.
 	times = clampi(times, 1, maxi(max_times(), 1)) if known_recipe() else 1
 	var missing := PackedStringArray()
+
+	if item_type.is_empty():
+		missing.append("l'orientation" if is_enchanting() else "ce que tu fabriques")
 
 	for parameter in workshop.get("parameters", []):
 		if not parameters.has(str(parameter.get("id", ""))):
@@ -477,6 +565,10 @@ func add_recipe_card(recipe: Dictionary, list: VBoxContainer) -> void:
 	var details := PackedStringArray()
 	var recipe_parameters: Dictionary = recipe.get("parameters", {})
 
+	for type in workshop.get("item_types", []):
+		if type.get("id", "") == recipe.get("item_type", ""):
+			details.append(str(type.get("label", "")).to_lower())
+
 	for parameter in workshop.get("parameters", []):
 		var id := str(parameter.get("id", ""))
 
@@ -504,6 +596,7 @@ func use_recipe(recipe: Dictionary) -> void:
 		selection[str(input.get("item_id", ""))] = int(input.get("quantity", 1))
 
 	parameters = recipe.get("parameters", {}).duplicate()
+	item_type = str(recipe.get("item_type", ""))
 	last_result = {}
 	last_error = ""
 	render_workshop()
@@ -523,11 +616,19 @@ func add_inventory_picker(level: int) -> void:
 
 	for item_id in ids:
 		var too_high := item_level(item_id) > max_item_level(level)
+		var reason := unusable_reason(item_id)
 		var button := UiStyle.make_card_button(46)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.text = "  %s  ×%d   ·   niv. %d" % [item_name(item_id), int(inventory[item_id]), item_level(item_id)]
+
+		if not reason.is_empty():
+			button.text += "   ·   " + reason
+		elif item_generation(item_id) >= 1:
+			button.text += "   ·   ⚒ travaillé"
+
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.disabled = too_high or is_crafting or selected_count() >= MAX_INPUTS
+		GameText.color_button(button, items.get(item_id, {}))
+		button.disabled = too_high or is_crafting or selected_count() >= MAX_INPUTS or not reason.is_empty()
 
 		if too_high:
 			button.tooltip_text = "Niveau %d requis dans ce métier" % ceili(item_level(item_id) / float(ITEM_LEVELS_PER_PROFESSION_LEVEL))
@@ -560,7 +661,7 @@ func known_recipe() -> bool:
 		for input in recipe.get("inputs", []):
 			inputs[str(input.get("item_id", ""))] = int(input.get("quantity", 1))
 
-		if inputs == selection and recipe.get("parameters", {}) == parameters:
+		if inputs == selection and recipe.get("parameters", {}) == parameters and str(recipe.get("item_type", "")) == item_type:
 			return true
 
 	return false
@@ -630,7 +731,7 @@ func craft() -> void:
 
 	var res := await GameState.perform_action(
 		"craft",
-		{"workshop_id": workshop.get("id", ""), "inputs": inputs, "parameters": parameters,
+		{"workshop_id": workshop.get("id", ""), "inputs": inputs, "parameters": parameters, "item_type": item_type,
 			"times": times if known_recipe() else 1}
 	)
 
@@ -640,6 +741,7 @@ func craft() -> void:
 		last_result = res.data
 		var output_id := str(res.data.get("output_item_id", ""))
 		items[output_id] = res.data.get("output_item", {})
+		items.merge(res.data.get("output_items", {}), true)
 	else:
 		last_error = res.error
 
@@ -666,7 +768,12 @@ func add_result_card() -> void:
 
 	box.add_child(make_label("✨ Création inédite !" if is_new else "📜 Recette connue", 15, COLOR_HIGHLIGHT if is_new else COLOR_BONUS, false))
 	var made := int(last_result.get("times", 1))
-	box.add_child(make_label("🎁 " + str(item.get("name", last_result.get("output_item_id", ""))) + (" ×%d" % made if made > 1 else ""), 18))
+	box.add_child(make_label("🎁 " + str(item.get("name", last_result.get("output_item_id", ""))), 18, GameText.rarity_color(item)))
+
+	if made > 1:
+		box.add_child(make_label(produced_summary(made), 13, null))
+	elif GameText.is_above_common(item):
+		box.add_child(make_label("◆ " + GameText.rarity_name(item), 14, GameText.rarity_color(item), false))
 
 	var category: String = {"equipment": "Équipement", "consumable": "Consommable", "material": "Matériau"}.get(str(item.get("category", "")), "Objet")
 	box.add_child(make_label("%s · niveau %d" % [category, int(item.get("level", 1))], 12, COLOR_MUTED))
@@ -693,6 +800,23 @@ func add_result_card() -> void:
 
 		if int(profession.get("levels_gained", 0)) > 0:
 			box.add_child(make_label("🌟 %s niveau %d !" % [GameText.profession_name(profession_id()), int(profession.get("level", 1))], 13, COLOR_HIGHLIGHT))
+
+
+# Série : combien de chaque rang (« ×5 : 3 Commun · 1 Peu commun · 1 Rare »).
+func produced_summary(made: int) -> String:
+	var counts := {}
+
+	for item_id in last_result.get("produced", {}):
+		var rarity := GameText.rarity_of(items.get(item_id, {}))
+		counts[rarity] = int(counts.get(rarity, 0)) + int(last_result["produced"][item_id])
+
+	var parts := PackedStringArray()
+
+	for rarity in GameText.RARITY_NAMES:
+		if counts.has(rarity):
+			parts.append("%d %s" % [counts[rarity], GameText.RARITY_NAMES[rarity]])
+
+	return "×%d : %s  (le meilleur est affiché)" % [made, " · ".join(parts)]
 
 
 # --- Navigation ---------------------------------------------------------------

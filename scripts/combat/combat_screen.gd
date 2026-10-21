@@ -1002,7 +1002,8 @@ func show_victory(data: Dictionary) -> void:
 		var res := await ApiClient.get_template("item", str(loot[0]))
 		var item: Dictionary = res.data if res.ok else {}
 		var loot_name: String = item.get("name", prettify_id(str(loot[0])))
-		add_result_line("🎁 %s ×%d" % [loot_name, int(loot[1])], 15)
+		var rarity := ("  ·  " + GameText.rarity_name(item)) if GameText.is_above_common(item) else ""
+		add_result_line("🎁 %s ×%d%s" % [loot_name, int(loot[1]), rarity], 15, GameText.rarity_color(item))
 
 		if not item.is_empty():
 			add_result_line("%s · niveau %d" % [GameText.prettify_id(str(item.get("category", ""))), int(item.get("level", 1))], 12, COLOR_MUTED)
@@ -1010,6 +1011,13 @@ func show_victory(data: Dictionary) -> void:
 		add_result_line("L'écho ne laisse aucun butin : il est parti avec le premier vainqueur.", 12, COLOR_MUTED)
 	else:
 		add_result_line("Pas de butin cette fois.", 12, COLOR_MUTED)
+
+	# Butin très rare, tiré en plus du butin normal.
+	for drop in data.get("rare_loot", []):
+		var res := await ApiClient.get_template("item", str(drop[0]))
+		var item: Dictionary = res.data if res.ok else {}
+		add_result_line("✨ Butin rare !", 16, GameText.rarity_color(item))
+		add_result_line("%s ×%d  ·  %s" % [item.get("name", prettify_id(str(drop[0]))), int(drop[1]), GameText.rarity_name(item)], 15, GameText.rarity_color(item))
 
 	# Quêtes en cours qui ont avancé.
 	for update in data.get("quest_progress", []):

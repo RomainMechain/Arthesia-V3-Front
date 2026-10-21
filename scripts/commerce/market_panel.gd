@@ -118,7 +118,7 @@ func build_listing_card(listing: Dictionary) -> PanelContainer:
 	box.add_theme_constant_override("separation", 4)
 	card.add_child(box)
 
-	box.add_child(make_row("%s  ×%d" % [item_name(item_id), quantity], "💰 %d" % price))
+	box.add_child(make_row("%s  ×%d" % [item_name(item_id), quantity], "💰 %d" % price, COLOR_HIGHLIGHT, item_color(item_id)))
 
 	var unit := "%s or / u" % GameText.format_number(float(price) / max(quantity, 1)) if quantity > 1 else ""
 	var origin := "Vendu par %s · %s" % [listing.get("seller_name", listing.get("seller_player_id", "?")), listing.get("market_name", "un autel")]
@@ -170,6 +170,7 @@ func render_sell(id: int) -> void:
 		var button := UiStyle.make_card_button(48)
 		button.text = "  %s  ×%d" % [item_name(item_id), int(inventory()[item_id])]
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		GameText.color_button(button, items.get(item_id, {}))
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.pressed.connect(
 			func():
@@ -196,7 +197,7 @@ func build_sell_form(item_id: String) -> void:
 	content.add_child(back)
 
 	var box := make_card_box()
-	box.add_child(make_label(item_name(item_id), 18))
+	box.add_child(make_label(item_name(item_id), 18, item_color(item_id)))
 	box.add_child(make_label("Tu en as %d · valeur de référence %d or / u · rachat en boutique %d or / u" % [owned, reference, shop_price], 12, COLOR_MUTED))
 
 	var quantity_row := HBoxContainer.new()
@@ -288,7 +289,7 @@ func render_mine(id: int) -> void:
 		var item_id := str(listing.get("item_id", ""))
 		var quantity := int(listing.get("quantity", 1))
 		var box := make_card_box()
-		box.add_child(make_row("%s  ×%d" % [item_name(item_id), quantity], "💰 %d" % int(listing.get("price", 0))))
+		box.add_child(make_row("%s  ×%d" % [item_name(item_id), quantity], "💰 %d" % int(listing.get("price", 0)), COLOR_HIGHLIGHT, item_color(item_id)))
 		box.add_child(make_label("Déposé %s · %s" % [time_ago(str(listing.get("listed_at", ""))), listing.get("market_name", "")], 12, COLOR_MUTED))
 
 		var cancel := make_action_button("Retirer l'annonce")

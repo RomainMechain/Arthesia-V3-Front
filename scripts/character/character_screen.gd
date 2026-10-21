@@ -826,6 +826,7 @@ func render_inventory() -> void:
 			var button := Button.new()
 			button.text = "%s  ×%d" % [item_name(item_id), int(inventory[item_id])]
 			button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			GameText.color_button(button, item_templates.get(item_id, {}))
 			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			button.custom_minimum_size = Vector2(0, 46)
 			button.pressed.connect(func(): show_item_detail(item_id))
@@ -845,7 +846,10 @@ func show_item_detail(item_id: String) -> void:
 	var template: Dictionary = item_templates.get(item_id, {})
 	var quantity := int(GameState.player.get("inventory", {}).get(item_id, 0))
 
-	add_label(item_name(item_id), 22)
+	add_label(item_name(item_id), 22, GameText.rarity_color(template))
+
+	if GameText.is_above_common(template):
+		add_label("◆ " + GameText.rarity_name(template), 13, GameText.rarity_color(template))
 
 	if template.is_empty():
 		add_label("Quantité : %d" % quantity)
@@ -932,7 +936,7 @@ func build_equip_candidate_card(item_id: String) -> PanelContainer:
 	var info := VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_theme_constant_override("separation", 2)
-	info.add_child(make_label(item_name(item_id), 16))
+	info.add_child(make_label(item_name(item_id), 16, GameText.rarity_color(item_templates.get(item_id, {}))))
 	info.add_child(
 		make_label(
 			"%s · Niveau requis %d" % [SLOT_LABELS.get(slot, slot), level_required],
@@ -1055,7 +1059,7 @@ func build_slot_card(slot: String, item_id, candidates: Array) -> PanelContainer
 	info.add_child(make_label(SLOT_LABELS[slot], 12, COLOR_MUTED, false))
 
 	if item_id:
-		info.add_child(make_label(item_name(item_id), 16))
+		info.add_child(make_label(item_name(item_id), 16, GameText.rarity_color(item_templates.get(item_id, {}))))
 		var bonuses := format_bonuses(item_bonuses(item_id))
 		if not bonuses.is_empty():
 			info.add_child(make_label(bonuses, 12, COLOR_BONUS))

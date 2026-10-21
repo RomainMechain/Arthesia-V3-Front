@@ -55,7 +55,7 @@ func build_offer_card(offer: Dictionary) -> void:
 	var owned := int(inventory().get(item_id, 0))
 
 	var box := make_card_box()
-	box.add_child(make_row(item_name(item_id), "💰 %d" % price))
+	box.add_child(make_row(item_name(item_id), "💰 %d" % price, COLOR_HIGHLIGHT, item_color(item_id)))
 
 	var detail = items.get(item_id, {}).get("description", "")
 
@@ -125,7 +125,7 @@ func build_sell_card(item_id: String) -> void:
 	var unit_price := int(sell_prices.get(item_id, 0))
 
 	var box := make_card_box()
-	box.add_child(make_row("%s  ×%d" % [item_name(item_id), owned], "%d or / u" % unit_price, COLOR_MUTED))
+	box.add_child(make_row("%s  ×%d" % [item_name(item_id), owned], "%d or / u" % unit_price, COLOR_MUTED, item_color(item_id)))
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)

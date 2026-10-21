@@ -157,9 +157,9 @@ func make_card_box() -> VBoxContainer:
 
 
 # Ligne « nom à gauche, détail à droite ».
-func make_row(left: String, right: String, right_color = COLOR_HIGHLIGHT) -> HBoxContainer:
+func make_row(left: String, right: String, right_color = COLOR_HIGHLIGHT, left_color = null) -> HBoxContainer:
 	var row := HBoxContainer.new()
-	var left_label := make_label(left, 15)
+	var left_label := make_label(left, 15, left_color)
 	left_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(left_label)
 	row.add_child(make_label(right, 14, right_color, false))
@@ -230,6 +230,10 @@ func load_items(item_ids: Array) -> void:
 
 func item_name(item_id: String) -> String:
 	return items.get(item_id, {}).get("name", GameText.prettify_id(item_id))
+
+
+func item_color(item_id: String) -> Color:
+	return GameText.rarity_color(items.get(item_id, {}))
 
 
 func inventory() -> Dictionary:
