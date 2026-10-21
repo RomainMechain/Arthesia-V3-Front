@@ -169,6 +169,7 @@ func render_sell(id: int) -> void:
 	for item_id in sorted_inventory_ids():
 		var button := UiStyle.make_card_button(48)
 		button.text = "  %s  ×%d" % [item_name(item_id), int(inventory()[item_id])]
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.pressed.connect(
 			func():

@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/quests/quest_journal.gd" id="1_journal"]
+[ext_resource type="Script" path="res://scripts/ui/touch_scroll.gd" id="touch_scroll"]
 
 [node name="QuestJournal" type="Control"]
 layout_mode = 3
@@ -51,6 +52,7 @@ vertical_alignment = 1
 text_overrun_behavior = 3
 
 [node name="Scroll" type="ScrollContainer" parent="Layout"]
+script = ExtResource("touch_scroll")
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0

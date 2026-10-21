@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/carnet/carnet_screen.gd" id="1_carnet"]
+[ext_resource type="Script" path="res://scripts/ui/touch_scroll.gd" id="touch_scroll"]
 
 [node name="CarnetScreen" type="Control"]
 layout_mode = 3
@@ -75,6 +76,7 @@ toggle_mode = true
 text = "Habitants"
 
 [node name="Scroll" type="ScrollContainer" parent="Layout"]
+script = ExtResource("touch_scroll")
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0

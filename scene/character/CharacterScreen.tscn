@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://df0eelnfl2jw2"]
+[gd_scene load_steps=4 format=3 uid="uid://df0eelnfl2jw2"]
 
 [ext_resource type="Script" uid="uid://b5rshhjrmnx52" path="res://scripts/character/character_screen.gd" id="1_char"]
+[ext_resource type="Script" path="res://scripts/ui/touch_scroll.gd" id="touch_scroll"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_title"]
 font_size = 26
@@ -84,6 +85,7 @@ toggle_mode = true
 text = "Compétences"
 
 [node name="Scroll" type="ScrollContainer" parent="Layout"]
+script = ExtResource("touch_scroll")
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0

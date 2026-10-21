@@ -11,13 +11,16 @@ extends Control
 
 signal back_requested
 
+const TOUCH_SCROLL := preload("res://scripts/ui/touch_scroll.gd")
 const COLOR_MUTED := UiStyle.COLOR_MUTED
 const COLOR_BONUS := UiStyle.COLOR_BONUS
 const COLOR_HIGHLIGHT := UiStyle.COLOR_HIGHLIGHT
 const COLOR_ERROR := UiStyle.COLOR_ERROR
 
-# Même limite que MAX_CRAFT_INPUTS côté serveur.
+# Même limite que MAX_CRAFT_ITEMS côté serveur : objets d'un craft, quantités comprises.
 const MAX_INPUTS := 4
+# Fabrications d'affilée d'une recette connue (CraftRequest.times côté serveur).
+const MAX_TIMES := 20
 # Un niveau de métier couvre deux niveaux d'objet (balance.ITEM_LEVELS_PER_PROFESSION_LEVEL côté serveur).
 const ITEM_LEVELS_PER_PROFESSION_LEVEL := 2
 
@@ -36,6 +39,8 @@ var parameters: Dictionary = {}
 # item_id -> quantité choisie, dans l'ordre d'ajout.
 var selection: Dictionary = {}
 var is_crafting := false
+# Nombre de fabrications d'affilée demandé (recette connue seulement).
+var times := 1
 var last_result: Dictionary = {}
 var last_error := ""
 # Fenêtre du carnet de recettes, ouverte par-dessus l'atelier (null sinon).
@@ -264,7 +269,7 @@ func add_parameters() -> void:
 
 func add_selection() -> void:
 	var box := add_card_box()
-	box.add_child(make_label("Ingrédients  (%d / %d)" % [selection.size(), MAX_INPUTS], 15, null, false))
+	box.add_child(make_label("Ingrédients  (%d / %d objets)" % [selected_count(), MAX_INPUTS], 15, null, false))
 
 	if selection.is_empty():
 		box.add_child(make_label("Ajoute des objets de ton sac ci-dessous.", 12, COLOR_MUTED))
@@ -299,7 +304,7 @@ func add_selection() -> void:
 		var plus := Button.new()
 		plus.text = "+"
 		plus.custom_minimum_size = Vector2(38, 38)
-		plus.disabled = is_crafting or selection[item_id] >= owned
+		plus.disabled = is_crafting or selection[item_id] >= owned or selected_count() >= MAX_INPUTS
 		plus.pressed.connect(
 			func():
 				selection[item_id] += 1
@@ -323,6 +328,8 @@ func add_selection() -> void:
 
 
 func add_craft_button() -> void:
+	# Une série ne vaut que pour une recette du carnet, dans la limite du sac.
+	times = clampi(times, 1, maxi(max_times(), 1)) if known_recipe() else 1
 	var missing := PackedStringArray()
 
 	for parameter in workshop.get("parameters", []):
@@ -342,9 +349,14 @@ func add_craft_button() -> void:
 		button.disabled = true
 	elif not missing.is_empty():
 		button.text = "Choisis : " + ", ".join(missing)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.disabled = true
 	else:
-		button.text = "🔨 Fabriquer"
+		button.text = "🔨 Fabriquer" if times <= 1 else "🔨 Fabriquer ×%d" % times
+
+	# Une recette déjà dans le carnet peut se refaire plusieurs fois d'un coup.
+	if not is_crafting and missing.is_empty() and known_recipe() and max_times() > 1:
+		add_times_row()
 
 	body.add_child(button)
 
@@ -418,7 +430,7 @@ func open_craft_book() -> void:
 
 	layout.add_child(make_label("Tes recettes restent secrètes : à toi de choisir avec qui les partager.", 12, COLOR_MUTED))
 
-	var list_scroll := ScrollContainer.new()
+	var list_scroll: ScrollContainer = TOUCH_SCROLL.new()
 	list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	layout.add_child(list_scroll)
@@ -478,6 +490,7 @@ func add_recipe_card(recipe: Dictionary, list: VBoxContainer) -> void:
 	button.custom_minimum_size = Vector2(0, 38)
 	button.disabled = is_crafting or not missing.is_empty()
 	button.text = "Reprendre cette recette" if missing.is_empty() else "Il te manque : " + ", ".join(missing)
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.pressed.connect(func(): use_recipe(recipe))
 	box.add_child(button)
 
@@ -513,7 +526,8 @@ func add_inventory_picker(level: int) -> void:
 		var button := UiStyle.make_card_button(46)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.text = "  %s  ×%d   ·   niv. %d" % [item_name(item_id), int(inventory[item_id]), item_level(item_id)]
-		button.disabled = too_high or is_crafting or selection.size() >= MAX_INPUTS
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.disabled = too_high or is_crafting or selected_count() >= MAX_INPUTS
 
 		if too_high:
 			button.tooltip_text = "Niveau %d requis dans ce métier" % ceili(item_level(item_id) / float(ITEM_LEVELS_PER_PROFESSION_LEVEL))
@@ -527,6 +541,78 @@ func add_inventory_picker(level: int) -> void:
 
 
 # --- Fabrication --------------------------------------------------------------
+
+# Objets choisis, quantités comprises.
+func selected_count() -> int:
+	var count := 0
+
+	for item_id in selection:
+		count += int(selection[item_id])
+
+	return count
+
+
+# La sélection et les paramètres actuels sont-ils une recette du carnet ?
+func known_recipe() -> bool:
+	for recipe in workshop_recipes():
+		var inputs := {}
+
+		for input in recipe.get("inputs", []):
+			inputs[str(input.get("item_id", ""))] = int(input.get("quantity", 1))
+
+		if inputs == selection and recipe.get("parameters", {}) == parameters:
+			return true
+
+	return false
+
+
+# Nombre de fois que le sac permet de refaire la sélection.
+func max_times() -> int:
+	var inventory: Dictionary = GameState.player.get("inventory", {})
+	var count := MAX_TIMES
+
+	for item_id in selection:
+		count = mini(count, int(inventory.get(item_id, 0)) / maxi(int(selection[item_id]), 1))
+
+	return count
+
+
+func add_times_row() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_child(make_label("Nombre :", 14, null, false))
+
+	for step in [[-1, "−"], [1, "+"]]:
+		var button := Button.new()
+		button.text = step[1]
+		button.custom_minimum_size = Vector2(44, 40)
+		button.disabled = times + step[0] < 1 or times + step[0] > max_times()
+		button.pressed.connect(
+			func():
+				times += step[0]
+				render_workshop()
+		)
+		row.add_child(button)
+
+		if step[0] < 0:
+			var count := make_label("×%d" % times, 16, null, false)
+			count.custom_minimum_size = Vector2(44, 0)
+			count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			row.add_child(count)
+
+	var all := Button.new()
+	all.text = "Max (%d)" % max_times()
+	all.custom_minimum_size = Vector2(0, 40)
+	all.disabled = times == max_times()
+	all.pressed.connect(
+		func():
+			times = max_times()
+			render_workshop()
+	)
+	row.add_child(all)
+	body.add_child(row)
+
 
 func craft() -> void:
 	if is_crafting or selection.is_empty():
@@ -544,7 +630,8 @@ func craft() -> void:
 
 	var res := await GameState.perform_action(
 		"craft",
-		{"workshop_id": workshop.get("id", ""), "inputs": inputs, "parameters": parameters}
+		{"workshop_id": workshop.get("id", ""), "inputs": inputs, "parameters": parameters,
+			"times": times if known_recipe() else 1}
 	)
 
 	is_crafting = false
@@ -578,7 +665,8 @@ func add_result_card() -> void:
 	var box := add_card_box(Color(0.2, 0.18, 0.12) if is_new else Color(0.17, 0.2, 0.15))
 
 	box.add_child(make_label("✨ Création inédite !" if is_new else "📜 Recette connue", 15, COLOR_HIGHLIGHT if is_new else COLOR_BONUS, false))
-	box.add_child(make_label("🎁 " + str(item.get("name", last_result.get("output_item_id", ""))), 18))
+	var made := int(last_result.get("times", 1))
+	box.add_child(make_label("🎁 " + str(item.get("name", last_result.get("output_item_id", ""))) + (" ×%d" % made if made > 1 else ""), 18))
 
 	var category: String = {"equipment": "Équipement", "consumable": "Consommable", "material": "Matériau"}.get(str(item.get("category", "")), "Objet")
 	box.add_child(make_label("%s · niveau %d" % [category, int(item.get("level", 1))], 12, COLOR_MUTED))

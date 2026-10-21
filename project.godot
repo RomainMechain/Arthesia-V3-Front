@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Arthesia-V3-Front"
+config/icon="res://icons/icon.svg"
 run/main_scene="uid://cwhn8r7ofse0k"
 config/features=PackedStringArray("4.5", "Mobile")
 
@@ -32,3 +33,4 @@ window/handheld/orientation=1
 [rendering]
 
 renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true

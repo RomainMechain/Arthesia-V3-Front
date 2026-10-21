@@ -825,6 +825,7 @@ func render_inventory() -> void:
 		for item_id in item_ids:
 			var button := Button.new()
 			button.text = "%s  ×%d" % [item_name(item_id), int(inventory[item_id])]
+			button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			button.custom_minimum_size = Vector2(0, 46)
 			button.pressed.connect(func(): show_item_detail(item_id))

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="34%" r="75%">
+      <stop offset="0" stop-color="#4a1f7a"/>
+      <stop offset="0.45" stop-color="#2a0f4d"/>
+      <stop offset="1" stop-color="#0c0519"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#7ff6ff" stop-opacity="0.85"/>
+      <stop offset="0.35" stop-color="#38c8f0" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#38c8f0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aura" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#b06cff" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#b06cff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="stone" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8f6cc4"/>
+      <stop offset="0.28" stop-color="#5a3a8c"/>
+      <stop offset="0.7" stop-color="#2e1952"/>
+      <stop offset="1" stop-color="#160a2b"/>
+    </linearGradient>
+    <linearGradient id="ledge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#c7a8ff"/>
+      <stop offset="0.35" stop-color="#7a55b5"/>
+      <stop offset="1" stop-color="#241240"/>
+    </linearGradient>
+    <linearGradient id="window" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9fcff"/>
+      <stop offset="1" stop-color="#3fd0f5"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7ff6ff" stop-opacity="0"/>
+      <stop offset="0.6" stop-color="#7ff6ff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#7ff6ff" stop-opacity="0.5"/>
+    </linearGradient>
+    <linearGradient id="mist" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b3fa8" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#4b2680" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#1a0b33" stop-opacity="1"/>
+    </linearGradient>
+    <radialGradient id="cloud" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#3a1b66" stop-opacity="1"/>
+      <stop offset="0.55" stop-color="#2c1350" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#2c1350" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cloud_light" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#8a5cc7" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#8a5cc7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <circle cx="256" cy="150" r="230" fill="url(#aura)"/>
+    <circle cx="70" cy="90" r="1.6" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="120" cy="60" r="1.1" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="420" cy="80" r="1.8" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="455" cy="150" r="1.1" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="90" cy="200" r="1.2" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="400" cy="220" r="1.0" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="60" cy="300" r="1.4" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="445" cy="290" r="1.5" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="150" cy="140" r="0.9" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="360" cy="50" r="1.2" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="470" cy="360" r="1.0" fill="#e6d4ff" opacity="0.75"/>
+    <circle cx="40" cy="400" r="1.1" fill="#e6d4ff" opacity="0.75"/>
+</svg>

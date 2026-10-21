@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://dpk8acjfdi6qm"]
+[gd_scene load_steps=3 format=3 uid="uid://dpk8acjfdi6qm"]
 
 [ext_resource type="Script" uid="uid://4f322ldg0krt" path="res://scripts/zone/zone_screen.gd" id="1_vyen1"]
+[ext_resource type="Script" path="res://scripts/ui/touch_scroll.gd" id="touch_scroll"]
 
 [node name="ZoneScreen" type="Control"]
 layout_mode = 3
@@ -51,6 +52,7 @@ vertical_alignment = 1
 text_overrun_behavior = 3
 
 [node name="Scroll" type="ScrollContainer" parent="Layout"]
+script = ExtResource("touch_scroll")
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
