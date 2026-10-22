@@ -13,6 +13,7 @@ extends Control
 
 signal back_requested
 
+const ITEM_BROWSER := preload("res://scripts/ui/item_browser.gd")
 const STAT_ORDER := ["hp", "atk", "def", "agi", "int", "sag"]
 
 const STAT_LABELS := {
@@ -712,18 +713,18 @@ func submit_allocation() -> void:
 # Charge les templates manquants d'une liste d'objets. Renvoie false si un
 # rendu plus récent a pris la main pendant le chargement.
 func ensure_item_templates(item_ids: Array, id: int) -> bool:
-	for item_id in item_ids:
-		if item_templates.has(item_id):
-			continue
+	var missing: Array = item_ids.filter(func(item_id): return not item_templates.has(item_id))
 
-		var res := await ApiClient.get_template("item", item_id)
+	if missing.is_empty():
+		return true
 
-		if id != render_id:
-			return false
+	# Une seule requête ; un template introuvable reste affiché avec son identifiant.
+	var found := await ApiClient.get_templates("item", missing)
 
-		# Un template introuvable reste affiché avec son identifiant.
-		item_templates[item_id] = res.data if res.ok else {}
+	if id != render_id:
+		return false
 
+	item_templates.merge(found, true)
 	return true
 
 
@@ -800,29 +801,11 @@ func render_inventory() -> void:
 	clear_content()
 
 	var inventory: Dictionary = GameState.player.get("inventory", {})
-	var groups: Dictionary = {}
-
-	for item_id in inventory:
-		var category: String = item_templates.get(item_id, {}).get("category", "other")
-
-		if not ITEM_CATEGORY_LABELS.has(category):
-			category = "other"
-
-		if not groups.has(category):
-			groups[category] = []
-
-		groups[category].append(item_id)
-
-	for category in ITEM_CATEGORY_ORDER:
-		if not groups.has(category):
-			continue
-
-		var item_ids: Array = groups[category]
-		item_ids.sort_custom(func(a, b): return item_name(a).naturalnocasecmp_to(item_name(b)) < 0)
-
-		add_section_title("%s  (%d)" % [ITEM_CATEGORY_LABELS[category], item_ids.size()])
-
-		for item_id in item_ids:
+	# Recherche, filtre de rang et catégories repliées (cartes construites à l'ouverture).
+	var browser = ITEM_BROWSER.new()
+	content.add_child(browser)
+	browser.setup("sac", inventory.keys(), item_templates,
+		func(item_id):
 			var button := Button.new()
 			button.text = "%s  ×%d" % [item_name(item_id), int(inventory[item_id])]
 			button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -830,7 +813,8 @@ func render_inventory() -> void:
 			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			button.custom_minimum_size = Vector2(0, 46)
 			button.pressed.connect(func(): show_item_detail(item_id))
-			content.add_child(button)
+			return button
+	)
 
 
 func show_item_detail(item_id: String) -> void:

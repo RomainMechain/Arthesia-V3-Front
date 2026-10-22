@@ -166,18 +166,22 @@ func render_sell(id: int) -> void:
 
 	add_content_label("Choisis un objet à mettre en vente. Il quitte ton sac jusqu'à la vente ou au retrait de l'annonce.", 12, COLOR_MUTED)
 
-	for item_id in sorted_inventory_ids():
-		var button := UiStyle.make_card_button(48)
-		button.text = "  %s  ×%d" % [item_name(item_id), int(inventory()[item_id])]
-		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		GameText.color_button(button, items.get(item_id, {}))
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.pressed.connect(
-			func():
-				selected_item_id = item_id
-				refresh()
-		)
-		content.add_child(button)
+	var browser = ITEM_BROWSER.new()
+	content.add_child(browser)
+	browser.setup("autel_vente", sorted_inventory_ids(), items,
+		func(item_id):
+			var button := UiStyle.make_card_button(48)
+			button.text = "  %s  ×%d" % [item_name(item_id), int(inventory()[item_id])]
+			button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			GameText.color_button(button, items.get(item_id, {}))
+			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.pressed.connect(
+				func():
+					selected_item_id = item_id
+					refresh()
+			)
+			return button
+	)
 
 
 func build_sell_form(item_id: String) -> void:

@@ -169,28 +169,11 @@ func _refresh_states_counted(counter: Dictionary) -> void:
 
 
 func load_item_names(item_ids: Array) -> void:
-	var counter := {"pending": 0}
+	var missing: Array = item_ids.filter(func(item_id): return not item_names.has(item_id))
+	var found := await ApiClient.get_templates("item", missing)
 
-	for item_id in item_ids:
-		if item_names.has(item_id):
-			continue
-
-		item_names[item_id] = GameText.prettify_id(item_id)
-		counter.pending += 1
-		_load_item_name(item_id, counter)
-
-	while counter.pending > 0:
-		await _load_finished
-
-
-func _load_item_name(item_id: String, counter: Dictionary) -> void:
-	var res := await ApiClient.get_template("item", item_id)
-
-	if res.ok:
-		item_names[item_id] = res.data.get("name", item_id)
-
-	counter.pending -= 1
-	_load_finished.emit()
+	for item_id in missing:
+		item_names[item_id] = found.get(item_id, {}).get("name", GameText.prettify_id(item_id))
 
 
 func refresh_states() -> void:

@@ -11,6 +11,7 @@ extends Control
 
 signal back_requested
 
+const ITEM_BROWSER := preload("res://scripts/ui/item_browser.gd")
 const TOUCH_SCROLL := preload("res://scripts/ui/touch_scroll.gd")
 const COLOR_MUTED := UiStyle.COLOR_MUTED
 const COLOR_BONUS := UiStyle.COLOR_BONUS
@@ -117,12 +118,7 @@ func profession_level(id: String) -> int:
 
 
 func load_items(item_ids: Array) -> void:
-	for item_id in item_ids:
-		if items.has(item_id):
-			continue
-
-		var res := await ApiClient.get_template("item", item_id)
-		items[item_id] = res.data if res.ok else {}
+	items.merge(await ApiClient.get_templates("item", item_ids.filter(func(id): return not items.has(id))), true)
 
 
 # --- Page : liste des ateliers ----------------------------------------------
@@ -614,31 +610,39 @@ func add_inventory_picker(level: int) -> void:
 		add_label("Rien d'autre à ajouter." if not inventory.is_empty() else "Ton sac est vide.", 13, COLOR_MUTED)
 		return
 
-	for item_id in ids:
-		var too_high := item_level(item_id) > max_item_level(level)
-		var reason := unusable_reason(item_id)
-		var button := UiStyle.make_card_button(46)
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.text = "  %s  ×%d   ·   niv. %d" % [item_name(item_id), int(inventory[item_id]), item_level(item_id)]
+	var browser = ITEM_BROWSER.new()
+	body.add_child(browser)
+	browser.setup("atelier", ids, items, func(item_id): return make_bag_card(item_id, level))
 
-		if not reason.is_empty():
-			button.text += "   ·   " + reason
-		elif item_generation(item_id) >= 1:
-			button.text += "   ·   ⚒ travaillé"
 
-		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		GameText.color_button(button, items.get(item_id, {}))
-		button.disabled = too_high or is_crafting or selected_count() >= MAX_INPUTS or not reason.is_empty()
+# Carte d'un objet du sac de l'atelier : grisée avec sa raison s'il ne peut pas servir.
+func make_bag_card(item_id: String, level: int) -> Button:
+	var inventory: Dictionary = GameState.player.get("inventory", {})
 
-		if too_high:
-			button.tooltip_text = "Niveau %d requis dans ce métier" % ceili(item_level(item_id) / float(ITEM_LEVELS_PER_PROFESSION_LEVEL))
+	var too_high := item_level(item_id) > max_item_level(level)
+	var reason := unusable_reason(item_id)
+	var button := UiStyle.make_card_button(46)
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.text = "  %s  ×%d   ·   niv. %d" % [item_name(item_id), int(inventory[item_id]), item_level(item_id)]
 
-		button.pressed.connect(
-			func():
-				selection[item_id] = 1
-				render_workshop()
-		)
-		body.add_child(button)
+	if not reason.is_empty():
+		button.text += "   ·   " + reason
+	elif item_generation(item_id) >= 1:
+		button.text += "   ·   ⚒ travaillé"
+
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	GameText.color_button(button, items.get(item_id, {}))
+	button.disabled = too_high or is_crafting or selected_count() >= MAX_INPUTS or not reason.is_empty()
+
+	if too_high:
+		button.tooltip_text = "Niveau %d requis dans ce métier" % ceili(item_level(item_id) / float(ITEM_LEVELS_PER_PROFESSION_LEVEL))
+
+	button.pressed.connect(
+		func():
+			selection[item_id] = 1
+			render_workshop()
+	)
+	return button
 
 
 # --- Fabrication --------------------------------------------------------------

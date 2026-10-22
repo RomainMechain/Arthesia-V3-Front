@@ -7,6 +7,7 @@ extends VBoxContainer
 # Créés avec preload(...).new(), puis setup() une fois ajoutés à l'arbre. Le
 # contenu se reconstruit à chaque changement du joueur.
 
+const ITEM_BROWSER := preload("res://scripts/ui/item_browser.gd")
 const COLOR_MUTED := UiStyle.COLOR_MUTED
 const COLOR_BONUS := UiStyle.COLOR_BONUS
 const COLOR_HIGHLIGHT := UiStyle.COLOR_HIGHLIGHT
@@ -147,12 +148,13 @@ func add_content_label(text: String, font_size := 0, color = null) -> Label:
 	return label
 
 
-func make_card_box() -> VBoxContainer:
+# Carte ajoutée à ``parent`` (par défaut, au contenu du panneau).
+func make_card_box(parent: Node = null) -> VBoxContainer:
 	var card := UiStyle.make_card()
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 	card.add_child(box)
-	content.add_child(card)
+	(parent if parent != null else content).add_child(card)
 	return box
 
 
@@ -220,12 +222,7 @@ func make_action_button(text: String) -> Button:
 # --- Données ------------------------------------------------------------------
 
 func load_items(item_ids: Array) -> void:
-	for item_id in item_ids:
-		if items.has(item_id):
-			continue
-
-		var res := await ApiClient.get_template("item", item_id)
-		items[item_id] = res.data if res.ok else {}
+	items.merge(await ApiClient.get_templates("item", item_ids.filter(func(id): return not items.has(id))), true)
 
 
 func item_name(item_id: String) -> String:

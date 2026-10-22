@@ -115,16 +115,21 @@ func render_sell(id: int) -> void:
 
 	add_content_label("Le marchand rachète tout, à un prix inférieur à la valeur des objets.", 12, COLOR_MUTED)
 
-	for item_id in sorted_inventory_ids():
-		if sell_prices.has(item_id):
-			build_sell_card(item_id)
+	var browser = ITEM_BROWSER.new()
+	content.add_child(browser)
+	browser.setup("boutique_vente", sorted_inventory_ids().filter(func(item_id): return sell_prices.has(item_id)), items,
+		func(item_id):
+			var holder := VBoxContainer.new()
+			build_sell_card(item_id, holder)
+			return holder
+	)
 
 
-func build_sell_card(item_id: String) -> void:
+func build_sell_card(item_id: String, parent: Node = null) -> void:
 	var owned := int(inventory().get(item_id, 0))
 	var unit_price := int(sell_prices.get(item_id, 0))
 
-	var box := make_card_box()
+	var box := make_card_box(parent)
 	box.add_child(make_row("%s  ×%d" % [item_name(item_id), owned], "%d or / u" % unit_price, COLOR_MUTED, item_color(item_id)))
 
 	var row := HBoxContainer.new()

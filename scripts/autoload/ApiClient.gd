@@ -148,6 +148,36 @@ func get_template(kind: String, template_id: String) -> Dictionary:
 	return await get_content("/content/templates/%s/%s" % [kind, template_id])
 
 
+# Plusieurs fiches d'un coup : celles déjà en cache ne sont pas redemandées, les
+# autres arrivent en une seule requête (POST /content/templates/{kind}/batch).
+# Renvoie {id: fiche} ; une fiche introuvable vaut {}.
+func get_templates(kind: String, template_ids: Array) -> Dictionary:
+	var found := {}
+	var missing: Array = []
+
+	for template_id in template_ids:
+		var path := "/content/templates/%s/%s" % [kind, template_id]
+
+		if _content_cache.has(path):
+			found[template_id] = _content_cache[path].data
+		elif not missing.has(template_id):
+			missing.append(template_id)
+
+	# Le serveur accepte 300 fiches par requête.
+	for start in range(0, missing.size(), 300):
+		var chunk := missing.slice(start, start + 300)
+		var res := await post_json("/content/templates/%s/batch" % kind, {"ids": chunk})
+		var templates: Dictionary = res.data.get("templates", {}) if res.ok else {}
+
+		for template_id in chunk:
+			if templates.has(template_id):
+				_content_cache["/content/templates/%s/%s" % [kind, template_id]] = {"ok": true, "status": 200, "data": templates[template_id], "error": ""}
+
+			found[template_id] = templates.get(template_id, {})
+
+	return found
+
+
 # Une entry de zone indique son template_type, qui ne correspond pas toujours
 # au type de template côté serveur : un quest_giver référence une quête.
 func template_kind_for_entry(entry: Dictionary) -> String:

@@ -196,10 +196,11 @@ func load_yields() -> void:
 	for y in yields:
 		total_weight += float(y.get("weight", 1))
 
+	var yield_items := await ApiClient.get_templates("item", yields.map(func(y): return str(y.get("item_id", ""))))
+
 	for y in yields:
 		var item_id: String = y.get("item_id", "")
-		var res := await ApiClient.get_template("item", item_id)
-		var item_name: String = res.data.get("name", item_id) if res.ok else GameText.prettify_id(item_id)
+		var item_name: String = yield_items.get(item_id, {}).get("name", GameText.prettify_id(item_id))
 
 		var quantity_min := int(y.get("quantity_min", 1))
 		var quantity_max := int(y.get("quantity_max", quantity_min))

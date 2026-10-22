@@ -290,9 +290,11 @@ func build_item_buttons() -> void:
 	var inventory: Dictionary = GameState.player.get("inventory", {})
 	var ids: Array = inventory.keys()
 	ids.sort()
+	# Tout le sac en une requête, au lieu d'un aller-retour par objet avant le combat.
+	var templates := await ApiClient.get_templates("item", ids)
 
 	for item_id in ids:
-		var res := await ApiClient.get_template("item", item_id)
+		var res := {"ok": not templates.get(item_id, {}).is_empty(), "data": templates.get(item_id, {})}
 
 		if not res.ok or not is_usable_consumable(res.data):
 			continue
