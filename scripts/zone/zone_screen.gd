@@ -223,7 +223,7 @@ func add_label(text: String, font_size := 0, color = null) -> Label:
 
 
 func add_section_title(text: String) -> void:
-	add_label(text, 17)
+	UiStyle.make_title(add_label(text, 16))
 
 
 func add_card(lines: Array) -> PanelContainer:

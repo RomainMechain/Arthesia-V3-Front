@@ -151,6 +151,7 @@ func add_group(category: String, ids: Array, only_group: bool) -> void:
 		header.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		header.custom_minimum_size = Vector2(0, 40)
 		header.add_theme_font_size_override("font_size", 15)
+		header.add_theme_font_override("font", UiStyle.TITLE_FONT)
 		var refresh_header := func():
 			header.text = "%s %s  (%d)" % ["▾" if state.open.get(category, false) else "▸", CATEGORY_LABELS[category], ids.size()]
 		refresh_header.call()
@@ -164,7 +165,8 @@ func add_group(category: String, ids: Array, only_group: bool) -> void:
 	else:
 		var title := Label.new()
 		title.text = "%s  (%d)" % [CATEGORY_LABELS[category], ids.size()]
-		title.add_theme_font_size_override("font_size", 15)
+		title.add_theme_font_size_override("font_size", 14)
+		UiStyle.make_title(title)
 		list_box.add_child(title)
 
 	list_box.add_child(cards)

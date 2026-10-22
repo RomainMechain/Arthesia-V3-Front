@@ -20,7 +20,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.07, 0.08, 0.11, 1)
+color = Color(0.075, 0.06, 0.047, 1)
 
 [node name="MapViewport" type="Control" parent="."]
 clip_contents = true
@@ -67,7 +67,7 @@ alignment = 1
 
 [node name="FloorTitle" type="Label" parent="TopBar/Row/Titles"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 15
 text = "Connexion..."
 horizontal_alignment = 1
 text_overrun_behavior = 3

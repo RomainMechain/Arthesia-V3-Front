@@ -22,7 +22,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.10747976, 0.10747973, 0.10747973, 1)
+color = Color(0.075, 0.06, 0.047, 1)
 
 [node name="Layout" type="VBoxContainer" parent="."]
 layout_mode = 1
@@ -47,6 +47,7 @@ layout_mode = 2
 text = "← Carte"
 
 [node name="Title" type="Label" parent="Layout/Header"]
+theme_type_variation = &"Titre"
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Personnage"

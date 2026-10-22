@@ -111,7 +111,7 @@ func _ready() -> void:
 	for card in [monster_card, player_card, log_card]:
 		card.add_theme_stylebox_override("panel", UiStyle.card_style())
 
-	result_panel.add_theme_stylebox_override("panel", UiStyle.card_style(Color(0.13, 0.13, 0.15)))
+	result_panel.add_theme_stylebox_override("panel", UiStyle.card_style(UiStyle.COLOR_PANEL))
 
 	UiStyle.style_bar(monster_hp, UiStyle.COLOR_ENEMY_HP)
 	UiStyle.style_bar(player_hp, UiStyle.COLOR_HP)
@@ -141,7 +141,7 @@ func _ready() -> void:
 func build_telegraph_widgets() -> void:
 	var banner := PanelContainer.new()
 	banner.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	banner.add_theme_stylebox_override("panel", UiStyle.card_style(Color(0.25, 0.12, 0.05)))
+	banner.add_theme_stylebox_override("panel", UiStyle.card_style(Color(0.28, 0.12, 0.05)))
 	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	log_card.add_child(banner)
 

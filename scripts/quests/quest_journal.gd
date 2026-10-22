@@ -106,7 +106,7 @@ func show_list() -> void:
 	# Les quêtes prêtes à rendre d'abord.
 	active.sort_custom(func(a, b): return a.get("ready", false) and not b.get("ready", false))
 
-	add_label("📜 En cours  (%d)" % active.size(), 17)
+	UiStyle.make_title(add_label("📜 En cours  (%d)" % active.size(), 16))
 
 	if active.is_empty():
 		add_label("Aucune quête en cours. Parle aux habitants des zones pour en trouver.", 13, COLOR_MUTED)
@@ -115,7 +115,7 @@ func show_list() -> void:
 		body.add_child(build_quest_card(entry))
 
 	if not completed.is_empty():
-		add_label("✅ Terminées  (%d)" % completed.size(), 17)
+		UiStyle.make_title(add_label("✅ Terminées  (%d)" % completed.size(), 16))
 
 		for entry in completed:
 			body.add_child(build_quest_card(entry))

@@ -31,7 +31,7 @@ var submit_button: Button
 
 
 func _ready() -> void:
-	card.add_theme_stylebox_override("panel", UiStyle.card_style(Color(0.12, 0.13, 0.16)))
+	card.add_theme_stylebox_override("panel", UiStyle.card_style(UiStyle.COLOR_PANEL))
 
 	GameState.character_needed.connect(_on_character_needed)
 	GameState.session_failed.connect(_on_session_failed)

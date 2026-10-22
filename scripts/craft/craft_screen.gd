@@ -293,7 +293,7 @@ func add_item_types() -> void:
 		item_type = ""
 
 	var box := add_card_box()
-	box.add_child(make_label("Orientation de la rune" if is_enchanting() else "Ce que tu fabriques", 15, null, false))
+	box.add_child(UiStyle.make_title(make_label("Orientation de la rune" if is_enchanting() else "Ce que tu fabriques", 14, null, false)))
 
 	if is_enchanting():
 		box.add_child(make_label("Pose un équipement et 1 à 3 matériaux : la rune le renforce. Un objet ne s'enchante qu'une fois, puis ne sert plus dans aucun craft.", 12, COLOR_MUTED))
@@ -325,7 +325,7 @@ func add_parameters() -> void:
 	for parameter in workshop.get("parameters", []):
 		var id := str(parameter.get("id", ""))
 		var box := add_card_box()
-		box.add_child(make_label(str(parameter.get("label", GameText.prettify_id(id))), 15, null, false))
+		box.add_child(UiStyle.make_title(make_label(str(parameter.get("label", GameText.prettify_id(id))), 14, null, false)))
 
 		var flow := HFlowContainer.new()
 		flow.add_theme_constant_override("h_separation", 6)
@@ -350,7 +350,7 @@ func add_parameters() -> void:
 
 func add_selection() -> void:
 	var box := add_card_box()
-	box.add_child(make_label("Ingrédients  (%d / %d objets)" % [selected_count(), MAX_INPUTS], 15, null, false))
+	box.add_child(UiStyle.make_title(make_label("Ingrédients  (%d / %d objets)" % [selected_count(), MAX_INPUTS], 14, null, false)))
 
 	if selection.is_empty():
 		box.add_child(make_label("Ajoute des objets de ton sac ci-dessous.", 12, COLOR_MUTED))
@@ -600,7 +600,7 @@ func use_recipe(recipe: Dictionary) -> void:
 
 
 func add_inventory_picker(level: int) -> void:
-	add_label("🎒 Ton sac", 17)
+	UiStyle.make_title(add_label("🎒 Ton sac", 16))
 
 	var inventory: Dictionary = GameState.player.get("inventory", {})
 	var ids: Array = inventory.keys().filter(func(item_id): return not selection.has(item_id))

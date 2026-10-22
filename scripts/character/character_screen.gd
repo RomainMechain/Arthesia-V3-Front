@@ -215,7 +215,7 @@ func add_label(text: String, font_size := 0, color = null) -> Label:
 
 
 func add_section_title(text: String) -> void:
-	var label := add_label(text, 18)
+	var label := UiStyle.make_title(add_label(text, 16))
 	label.add_theme_constant_override("line_spacing", 0)
 
 

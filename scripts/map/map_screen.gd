@@ -109,19 +109,23 @@ var login_screen: Control
 
 
 func _ready() -> void:
-	var bar_style := UiStyle.card_style(Color(0.1, 0.11, 0.14, 0.92))
+	var bar_style := UiStyle.card_style(UiStyle.COLOR_PANEL)
 	top_bar.add_theme_stylebox_override("panel", bar_style)
 	bottom_bar.add_theme_stylebox_override("panel", bar_style)
-	zone_sheet.add_theme_stylebox_override("panel", UiStyle.card_style(Color(0.12, 0.13, 0.16, 0.97)))
+	zone_sheet.add_theme_stylebox_override("panel", UiStyle.card_style(UiStyle.COLOR_PANEL))
+	UiStyle.make_title(floor_title)
 
 	# Le bouton de recentrage prend le style des barres pour ne pas être
 	# confondu avec le badge de position d'une zone.
 	for style_name in ["normal", "hover", "pressed"]:
-		var style := UiStyle.card_style(Color(0.1, 0.11, 0.14, 0.92) if style_name == "normal" else Color(0.18, 0.19, 0.23, 0.95))
-		style.set_corner_radius_all(24)
+		var style := UiStyle.flat_style(UiStyle.COLOR_PANEL if style_name == "normal" else UiStyle.COLOR_CARD.lightened(0.08), 24)
+		style.set_border_width_all(1)
+		style.border_color = UiStyle.COLOR_GOLD_DIM
 		recenter_button.add_theme_stylebox_override(style_name, style)
 	UiStyle.style_bar(xp_bar, UiStyle.COLOR_XP)
 	UiStyle.style_bar(hp_bar, UiStyle.COLOR_HP)
+
+	add_light_motes()
 
 	# Pastille de niveau : un rond sombre cerclé d'or.
 	var badge_style := StyleBoxFlat.new()
@@ -290,6 +294,29 @@ func load_floor(floor_id: String, center: bool) -> void:
 
 
 # --- Barre du personnage et badges ------------------------------------------------
+
+# Grains de lumière dorée qui montent lentement devant la carte, sous les barres.
+func add_light_motes() -> void:
+	var motes := CPUParticles2D.new()
+	motes.amount = 26
+	motes.lifetime = 9.0
+	motes.preprocess = 9.0
+	motes.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	motes.emission_rect_extents = Vector2(220, 360)
+	motes.position = Vector2(180, 340)
+	motes.direction = Vector2(0.15, -1)
+	motes.spread = 25.0
+	motes.gravity = Vector2.ZERO
+	motes.initial_velocity_min = 4.0
+	motes.initial_velocity_max = 12.0
+	motes.scale_amount_min = 1.8
+	motes.scale_amount_max = 3.4
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.3, 0.75, 1.0])
+	fade.colors = PackedColorArray([Color(1.0, 0.85, 0.5, 0.0), Color(1.0, 0.85, 0.5, 0.55), Color(1.0, 0.8, 0.45, 0.4), Color(1.0, 0.8, 0.45, 0.0)])
+	motes.color_ramp = fade
+	map_viewport.add_child(motes)
+
 
 func place_above_bottom_bar() -> void:
 	var bar_top := bottom_bar.offset_bottom - bottom_bar.size.y
@@ -516,6 +543,16 @@ func build_map() -> void:
 		paths.append([zone_positions[connection[0]], zone_positions[connection[1]], both_open])
 
 	map_container.set_paths(paths)
+	# Le paysage peint autour de chaque zone visible (map_canvas.gd).
+	var terrain: Array = []
+
+	for zone in zones:
+		var zone_id := str(zone.get("id", ""))
+
+		if zone_positions.has(zone_id):
+			terrain.append({"id": zone_id, "position": zone_positions[zone_id], "type": str(zone.get("type", "")), "open": zone_state(zone) == "open"})
+
+	map_container.set_zones(terrain)
 	clamp_map_position()
 
 
@@ -718,7 +755,7 @@ func show_zone_sheet(zone: Dictionary) -> void:
 	header.add_theme_constant_override("separation", 8)
 	header.add_child(make_label(ZONE_NODE_SCRIPT.icon_for(zone_type) if state == "open" else "🔒", 22, null, false))
 
-	var name_label := make_label(str(zone.get("name", "Zone")), 18)
+	var name_label := UiStyle.make_title(make_label(str(zone.get("name", "Zone")), 17))
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(name_label)
 

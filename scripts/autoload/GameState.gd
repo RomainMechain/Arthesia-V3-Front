@@ -29,6 +29,8 @@ var health_received_ms := 0
 
 
 func _ready() -> void:
+	# Le thème du grimoire habille toute l'application (UiStyle.build_theme).
+	get_tree().root.theme = UiStyle.build_theme()
 	Auth.signed_in.connect(func(): start_session())
 	Auth.signed_out.connect(reset)
 

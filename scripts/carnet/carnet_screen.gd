@@ -82,7 +82,7 @@ func show_tab(tab: String) -> void:
 	for floor in floors:
 		# Le nom de l'étage ne sert de séparateur que s'il y en a plusieurs.
 		if floors.size() > 1:
-			add_label(str(floor.get("name", "Étage")), 17, COLOR_HIGHLIGHT)
+			UiStyle.make_title(add_label(str(floor.get("name", "Étage")), 16))
 
 		match tab:
 			"bestiary":

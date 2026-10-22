@@ -19,10 +19,12 @@ const TYPE_ICONS := {
 	"lair": "🐉",
 }
 
-const RING_OPEN := Color(0.4, 0.75, 0.7)
-const RING_CURRENT := Color(1.0, 0.82, 0.35)
-const RING_BOSS := Color(0.9, 0.35, 0.3)
-const RING_LOCKED := Color(0.4, 0.4, 0.42)
+# Médaillons du grimoire : anneau doré, cramoisi pour le boss, bronze terni
+# pour une zone fermée ; la zone du joueur brille plus fort.
+const RING_OPEN := Color(0.78, 0.62, 0.34)
+const RING_CURRENT := Color(1.0, 0.86, 0.5)
+const RING_BOSS := Color(0.82, 0.3, 0.22)
+const RING_LOCKED := Color(0.4, 0.34, 0.27)
 
 @onready var zone_button: Button = $ZoneButton
 @onready var zone_name: Label = $ZoneName
@@ -61,7 +63,7 @@ func setup(data: Dictionary, state: String, is_current: bool, quest_ready: bool)
 	if is_current:
 		ring = RING_CURRENT
 
-	var fill := Color(0.13, 0.14, 0.17) if open else Color(0.1, 0.1, 0.11)
+	var fill := Color(0.17, 0.125, 0.085) if open else Color(0.1, 0.082, 0.064)
 
 	for style_name in ["normal", "hover", "pressed", "focus"]:
 		var style := StyleBoxFlat.new()
@@ -74,7 +76,8 @@ func setup(data: Dictionary, state: String, is_current: bool, quest_ready: bool)
 		zone_button.add_theme_stylebox_override(style_name, style)
 
 	zone_button.add_theme_font_size_override("font_size", 22)
-	zone_name.add_theme_color_override("font_color", Color(0.95, 0.93, 0.88) if open else Color(0.6, 0.6, 0.62))
+	zone_name.add_theme_font_override("font", UiStyle.TITLE_FONT)
+	zone_name.add_theme_color_override("font_color", UiStyle.COLOR_TEXT if open else Color(0.6, 0.55, 0.47))
 
 	if is_current:
 		badge.text = "📍"
