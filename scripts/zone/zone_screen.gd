@@ -17,6 +17,9 @@ const RESOURCE_PANEL_SCRIPT := preload("res://scripts/zone/resource_panel.gd")
 const QUEST_PANEL_SCRIPT := preload("res://scripts/quests/quest_panel.gd")
 const SHOP_PANEL_SCRIPT := preload("res://scripts/commerce/shop_panel.gd")
 const MARKET_PANEL_SCRIPT := preload("res://scripts/commerce/market_panel.gd")
+const ZONE_BANNER := preload("res://scripts/zone/zone_banner.gd")
+# Zones déjà ouvertes sur cet appareil : le carton d'entrée ne s'affiche qu'une fois.
+const SEEN_ZONES_FILE := "user://zones_vues.cfg"
 
 const COLOR_MUTED := UiStyle.COLOR_MUTED
 const COLOR_BONUS := UiStyle.COLOR_BONUS
@@ -104,8 +107,9 @@ func setup(data: Dictionary) -> void:
 	title_label.text = data.get("name", "Zone")
 
 	clear_body()
-	add_label(data.get("description", ""), 13, COLOR_MUTED)
+	add_zone_header()
 	add_label("Chargement de la zone...", 14, COLOR_MUTED)
+	show_intro_if_new(data)
 
 	var zone_id: String = data.get("id", "")
 	var res := await ApiClient.get_zone(zone_id)
@@ -129,6 +133,71 @@ func setup(data: Dictionary) -> void:
 	await load_templates(zone_data.get("entries", []), counter)
 
 	show_list()
+
+
+# --- Ambiance -----------------------------------------------------------------
+
+# Vignette illustrée de la zone (le nom est déjà dans la barre de titre) et sa description.
+func add_zone_header() -> void:
+	var banner = ZONE_BANNER.new()
+	banner.setup(zone_data, false)
+	body.add_child(banner)
+	add_label(zone_data.get("description", ""), 13, COLOR_MUTED)
+
+
+# Carton d'entrée, la première fois qu'on ouvre une zone : la vignette avec son
+# nom, la description, puis « Touche pour continuer ».
+func show_intro_if_new(zone: Dictionary) -> void:
+	var zone_id := str(zone.get("id", ""))
+	var seen := ConfigFile.new()
+	seen.load(SEEN_ZONES_FILE)
+
+	if zone_id.is_empty() or seen.get_value("vues", zone_id, false):
+		return
+
+	seen.set_value("vues", zone_id, true)
+	seen.save(SEEN_ZONES_FILE)
+
+	var intro := ColorRect.new()
+	intro.color = Color(0.03, 0.025, 0.02, 0.94)
+	intro.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	intro.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(intro)
+
+	var column := VBoxContainer.new()
+	column.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	column.offset_left = 20
+	column.offset_right = -20
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_theme_constant_override("separation", 18)
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	intro.add_child(column)
+
+	var banner = ZONE_BANNER.new()
+	banner.setup(zone)
+	banner.custom_minimum_size.y = 190
+	column.add_child(banner)
+
+	var text := make_label(str(zone.get("description", "")), 15, UiStyle.COLOR_TEXT)
+	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(text)
+
+	var hint := make_label("Touche pour continuer", 12, COLOR_MUTED)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(hint)
+
+	# Fondu d'ouverture, puis fermeture au toucher (après un court instant).
+	intro.modulate.a = 0.0
+	create_tween().tween_property(intro, "modulate:a", 1.0, 0.6)
+	var opened_at := Time.get_ticks_msec()
+	intro.gui_input.connect(
+		func(event):
+			if event is InputEventMouseButton and event.pressed and Time.get_ticks_msec() - opened_at > 500:
+				intro.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				var tween := create_tween()
+				tween.tween_property(intro, "modulate:a", 0.0, 0.4)
+				tween.tween_callback(intro.queue_free)
+	)
 
 
 # --- Chargements --------------------------------------------------------------
@@ -349,7 +418,7 @@ func show_list(animate := true) -> void:
 	current_entry = {}
 	clear_body()
 
-	add_label(zone_data.get("description", ""), 13, COLOR_MUTED)
+	add_zone_header()
 
 	var entries: Array = zone_data.get("entries", [])
 
